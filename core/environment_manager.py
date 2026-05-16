@@ -24,7 +24,7 @@ class EnvironmentManager:
         {"import_name": "PySide6.QtWidgets", "pip_name": "PySide6", "version": ">=6.7,<6.8", "description": "GUI framework"},
         {
             "import_name": "PySide6.QtWebEngineWidgets",
-            "pip_name": "PySide6-WebEngine",
+            "pip_name": "PySide6-Addons",
             "version": ">=6.7,<6.8",
             "description": "Embedded molecular visualization browser",
             "version_optional": True,

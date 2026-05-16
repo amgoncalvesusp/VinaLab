@@ -6,6 +6,8 @@
 - Adiciona empacotamento automatizado dos artefatos e criação de GitHub Release.
 - Atualiza README bilíngue com inglês primeiro e português em seguida.
 - Mantém dependências opcionais de pontuação fora do bootstrap automático.
+- Corrige dependências de build para usar `PySide6`/`PySide6-Addons` em vez de um pacote inexistente `PySide6-WebEngine`.
+- Remove a API Python `vina` dos requirements de build, usando o fallback CLI incluído para evitar compilação com Boost nos runners.
 
 ## 0.0.1 - 2026-05-16
 

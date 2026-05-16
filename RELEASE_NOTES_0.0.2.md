@@ -11,6 +11,7 @@ This release prepares VinaLab for public GitHub releases built from tags.
 - Added bilingual README with English first and Portuguese second.
 - Added `requirements-build.txt` for lean release builds without optional heavy scoring runtimes.
 - Kept optional Torch/DGL-based scoring dependencies out of first-run setup.
+- Builds use the bundled AutoDock Vina CLI fallback instead of compiling the optional Python `vina` package on CI runners.
 
 ### Release Assets
 
@@ -35,6 +36,7 @@ Este release prepara o VinaLab para releases públicos no GitHub gerados a parti
 - Adicionado README bilíngue com inglês primeiro e português em seguida.
 - Adicionado `requirements-build.txt` para builds de release sem runtimes opcionais pesados de pontuação.
 - Dependências opcionais baseadas em Torch/DGL continuam fora do setup automático inicial.
+- Os builds usam o fallback CLI do AutoDock Vina incluído, sem compilar o pacote Python opcional `vina` nos runners de CI.
 
 ### Artefatos do Release
 

@@ -1,6 +1,4 @@
 PySide6>=6.7,<6.8
-PySide6-WebEngine>=6.7,<6.8
-vina
 meeko
 scipy>=1.10
 gemmi>=0.6
