@@ -1,0 +1,12 @@
+.venv/
+build/
+dist/
+logs/
+.pytest_cache/
+__pycache__/
+*.pyc
+*.pyo
+*.log
+environment_status.json
+release/
+artifacts/

@@ -1,0 +1,17 @@
+PySide6>=6.7,<6.8
+PySide6-WebEngine>=6.7,<6.8
+vina
+meeko
+scipy>=1.10
+gemmi>=0.6
+rdkit>=2023.3.1
+openbabel-wheel>=3.1.1
+pandas
+matplotlib
+openpyxl
+reportlab
+numpy>=1.23,<2
+py3Dmol>=2.0
+wheel>=0.40
+pyinstaller
+pytest

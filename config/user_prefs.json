@@ -1,0 +1,11 @@
+{
+  "scoring_function": "rtmscore",
+  "language": "pt",
+  "screen_profile": "ultrawide",
+  "first_run": false,
+  "scoring_functions": [
+    "rtmscore",
+    "delta_vina_xgb",
+    "vinardo"
+  ]
+}
