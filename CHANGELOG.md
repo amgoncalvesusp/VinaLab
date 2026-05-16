@@ -8,6 +8,7 @@
 - Mantém dependências opcionais de pontuação fora do bootstrap automático.
 - Corrige dependências de build para usar `PySide6`/`PySide6-Addons` em vez de um pacote inexistente `PySide6-WebEngine`.
 - Remove a API Python `vina` dos requirements de build, usando o fallback CLI incluído para evitar compilação com Boost nos runners.
+- Usa `macos-15-intel` para o build macOS x64 no GitHub Actions.
 
 ## 0.0.1 - 2026-05-16
 
