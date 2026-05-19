@@ -24,12 +24,6 @@ jobs:
           - os: windows-2022
             label: windows-x64
             artifact_name: vinalab-windows-x64
-          - os: macos-15-intel
-            label: macos-x64
-            artifact_name: vinalab-macos-x64
-          - os: ubuntu-22.04
-            label: linux-x64
-            artifact_name: vinalab-linux-x64
 
     steps:
       - name: Checkout
@@ -99,5 +93,5 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          body_path: RELEASE_NOTES_0.0.2.md
+          body_path: RELEASE_NOTES_0.0.3.md
           files: release-assets/**/*

@@ -214,6 +214,7 @@ class ResultsTab(QWidget):
         self._update_consensus_tab()
         self._update_clusters_tab()
         self._update_chart()
+        self._update_consensus_plot()
         self.results_changed.emit(list(self.results))
 
     def append_log(self, message: str) -> None:
@@ -395,6 +396,54 @@ class ResultsTab(QWidget):
         ScrollManager.optimize(self.consensus_table)
         consensus_layout.addWidget(consensus_hint)
         consensus_layout.addWidget(self.consensus_table, stretch=1)
+
+        consensus_plot_layout = QVBoxLayout(self.consensus_plot_widget)
+        consensus_plot_layout.setContentsMargins(0, 0, 0, 0)
+        consensus_plot_controls = QHBoxLayout()
+        consensus_plot_controls.addWidget(QLabel("X:"))
+        consensus_plot_controls.addWidget(self.consensus_plot_x_combo)
+        consensus_plot_controls.addWidget(QLabel("Y:"))
+        consensus_plot_controls.addWidget(self.consensus_plot_y_combo)
+        self.consensus_plot_3d_checkbox.setText("3D")
+        consensus_plot_controls.addWidget(self.consensus_plot_3d_checkbox)
+        consensus_plot_controls.addWidget(QLabel("Z:"))
+        consensus_plot_controls.addWidget(self.consensus_plot_z_combo)
+        self.consensus_plot_z_combo.setEnabled(False)
+        self.consensus_plot_refresh_button.setText("Atualizar plot")
+        consensus_plot_controls.addWidget(self.consensus_plot_refresh_button)
+        consensus_plot_controls.addStretch()
+        self.consensus_plot_3d_checkbox.toggled.connect(self.consensus_plot_z_combo.setEnabled)
+        self.consensus_plot_3d_checkbox.toggled.connect(lambda _checked: self._update_consensus_plot())
+        self.consensus_plot_refresh_button.clicked.connect(self._update_consensus_plot)
+        self.consensus_plot_x_combo.currentIndexChanged.connect(lambda _index: self._update_consensus_plot())
+        self.consensus_plot_y_combo.currentIndexChanged.connect(lambda _index: self._update_consensus_plot())
+        self.consensus_plot_z_combo.currentIndexChanged.connect(lambda _index: self._update_consensus_plot())
+        consensus_plot_layout.addLayout(consensus_plot_controls)
+        consensus_plot_layout.addWidget(self.consensus_plot_canvas, stretch=1)
+
+        consensus_plot_layout = QVBoxLayout(self.consensus_plot_widget)
+        consensus_plot_layout.setContentsMargins(0, 0, 0, 0)
+        consensus_plot_controls = QHBoxLayout()
+        consensus_plot_controls.addWidget(QLabel("X:"))
+        consensus_plot_controls.addWidget(self.consensus_plot_x_combo)
+        consensus_plot_controls.addWidget(QLabel("Y:"))
+        consensus_plot_controls.addWidget(self.consensus_plot_y_combo)
+        self.consensus_plot_3d_checkbox.setText("3D")
+        consensus_plot_controls.addWidget(self.consensus_plot_3d_checkbox)
+        consensus_plot_controls.addWidget(QLabel("Z:"))
+        consensus_plot_controls.addWidget(self.consensus_plot_z_combo)
+        self.consensus_plot_z_combo.setEnabled(False)
+        self.consensus_plot_refresh_button.setText("Atualizar plot")
+        consensus_plot_controls.addWidget(self.consensus_plot_refresh_button)
+        consensus_plot_controls.addStretch()
+        self.consensus_plot_3d_checkbox.toggled.connect(self.consensus_plot_z_combo.setEnabled)
+        self.consensus_plot_3d_checkbox.toggled.connect(lambda _checked: self._update_consensus_plot())
+        self.consensus_plot_refresh_button.clicked.connect(self._update_consensus_plot)
+        self.consensus_plot_x_combo.currentIndexChanged.connect(lambda _index: self._update_consensus_plot())
+        self.consensus_plot_y_combo.currentIndexChanged.connect(lambda _index: self._update_consensus_plot())
+        self.consensus_plot_z_combo.currentIndexChanged.connect(lambda _index: self._update_consensus_plot())
+        consensus_plot_layout.addLayout(consensus_plot_controls)
+        consensus_plot_layout.addWidget(self.consensus_plot_canvas, stretch=1)
 
         clusters_layout = QVBoxLayout(self.clusters_widget)
         clusters_layout.setContentsMargins(0, 0, 0, 0)
@@ -883,6 +932,132 @@ class ResultsTab(QWidget):
             self.consensus_tab_index = -1
         else:
             self.consensus_tab_index = current_index
+        self._set_consensus_plot_tab_visible(visible)
+
+    def _set_consensus_plot_tab_visible(self, visible: bool) -> None:
+        """Add or remove the Consensus Plot sub-tab (Issue 14)."""
+        current_index = self._side_tab_index(self.consensus_plot_widget)
+        if visible and current_index < 0:
+            self.consensus_plot_tab_index = self.preview_tabs.addTab(
+                self.consensus_plot_widget, "Consensus Plot"
+            )
+        elif not visible and current_index >= 0:
+            self.preview_tabs.removeTab(current_index)
+            self.consensus_plot_tab_index = -1
+        else:
+            self.consensus_plot_tab_index = current_index
+
+    def _consensus_plot_scoring_labels(self) -> list[str]:
+        """Return distinct scoring function labels present in results."""
+        labels: list[str] = []
+        for row in self.results:
+            label = str(row.get("scoring_function") or "")
+            if label and label not in labels:
+                labels.append(label)
+        return labels
+
+    def _refresh_consensus_plot_combos(self) -> None:
+        """Refresh X/Y/Z dropdown contents to mirror scoring functions in the run."""
+        labels = self._consensus_plot_scoring_labels()
+        for combo in (
+            self.consensus_plot_x_combo,
+            self.consensus_plot_y_combo,
+            self.consensus_plot_z_combo,
+        ):
+            previous = combo.currentText()
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItems(labels)
+            if previous and previous in labels:
+                combo.setCurrentText(previous)
+            combo.blockSignals(False)
+        if len(labels) >= 2:
+            if not self.consensus_plot_x_combo.currentText():
+                self.consensus_plot_x_combo.setCurrentIndex(0)
+            if (
+                self.consensus_plot_y_combo.currentText() == self.consensus_plot_x_combo.currentText()
+                and len(labels) > 1
+            ):
+                self.consensus_plot_y_combo.setCurrentIndex(1)
+
+    def _best_score_per_ligand(self, scoring_label: str) -> dict[str, float]:
+        """Return best (most negative) affinity per ligand for a given scoring function."""
+        best: dict[str, float] = {}
+        for row in self.results:
+            if str(row.get("scoring_function") or "") != scoring_label:
+                continue
+            try:
+                score = float(row.get("affinity"))
+            except (TypeError, ValueError):
+                continue
+            ligand = str(row.get("ligand_name") or "")
+            if ligand not in best or score < best[ligand]:
+                best[ligand] = score
+        return best
+
+    def _update_consensus_plot(self) -> None:
+        """Render the 2D/3D consensus scatter using matplotlib (plotly fallback when available)."""
+        self._refresh_consensus_plot_combos()
+        labels = self._consensus_plot_scoring_labels()
+        if len(labels) < 2:
+            self.consensus_plot_figure.clear()
+            self.consensus_plot_canvas.draw_idle()
+            return
+        x_label = self.consensus_plot_x_combo.currentText() or labels[0]
+        y_label = self.consensus_plot_y_combo.currentText() or (labels[1] if len(labels) > 1 else labels[0])
+        z_label = self.consensus_plot_z_combo.currentText() or (labels[2] if len(labels) > 2 else "")
+        use_3d = bool(self.consensus_plot_3d_checkbox.isChecked() and z_label and z_label in labels)
+
+        scores_x = self._best_score_per_ligand(x_label)
+        scores_y = self._best_score_per_ligand(y_label)
+        scores_z = self._best_score_per_ligand(z_label) if use_3d else {}
+        ligands = sorted(set(scores_x) & set(scores_y) & (set(scores_z) if use_3d else set(scores_x) & set(scores_y)))
+        if not ligands:
+            self.consensus_plot_figure.clear()
+            self.consensus_plot_canvas.draw_idle()
+            return
+
+        if use_3d:
+            try:
+                from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 - registers 3D projection
+            except ImportError:
+                use_3d = False
+
+        self.consensus_plot_figure.clear()
+        if use_3d:
+            axes = self.consensus_plot_figure.add_subplot(111, projection="3d")
+            xs = [scores_x[name] for name in ligands]
+            ys = [scores_y[name] for name in ligands]
+            zs = [scores_z[name] for name in ligands]
+            axes.scatter(xs, ys, zs)
+            for name, x, y, z in zip(ligands, xs, ys, zs):
+                axes.text(x, y, z, name, fontsize=7)
+            axes.set_xlabel(x_label)
+            axes.set_ylabel(y_label)
+            axes.set_zlabel(z_label)
+        else:
+            axes = self.consensus_plot_figure.add_subplot(111)
+            xs = [scores_x[name] for name in ligands]
+            ys = [scores_y[name] for name in ligands]
+            scatter = axes.scatter(xs, ys)
+            for name, x, y in zip(ligands, xs, ys):
+                axes.annotate(name, (x, y), fontsize=7, xytext=(4, 4), textcoords="offset points")
+            axes.set_xlabel(x_label)
+            axes.set_ylabel(y_label)
+            try:
+                import mplcursors
+
+                cursor = mplcursors.cursor(scatter, hover=True)
+                cursor.connect(
+                    "add",
+                    lambda sel: sel.annotation.set_text(
+                        f"{ligands[sel.index]}\n{x_label}: {xs[sel.index]:.2f}\n{y_label}: {ys[sel.index]:.2f}"
+                    ),
+                )
+            except ImportError:
+                pass
+        axes.set_title(f"Consensus Plot ({len(ligands)} ligante(s))")
+        self.consensus_plot_canvas.draw_idle()
 
     def _set_clusters_tab_visible(self, visible: bool) -> None:
         """Add or remove the clusters tab from the preview/result side panel."""

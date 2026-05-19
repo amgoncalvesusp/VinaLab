@@ -17,12 +17,41 @@ from core.file_utils import (
     ensure_directory,
     pdbqt_coordinate_bounds,
     pdbqt_coordinates,
+    repair_pdbqt_charges,
     safe_stem,
     sanitize_pdbqt_for_vina,
     validate_ligand_pdbqt,
+    validate_pdbqt_charges,
 )
 
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0
+
+# --------------------------------------------------------------------------- #
+# Issue 4 — Inorganic/metal-containing complex scoring support (clarification) #
+# --------------------------------------------------------------------------- #
+# AutoDock Vina 1.2.x ships native parameters for a limited set of metal
+# atom types (Mg, Mn, Zn, Ca, Fe, Cu) via the AutoDock atom-typing scheme.
+#
+# - Vina (default scoring): the empirical free-energy terms do not include a
+#   dedicated coordination-bond term; metal ions are treated as Lennard-Jones
+#   spheres. Predictions for metalloprotein binding sites are systematically
+#   biased and should be interpreted qualitatively.
+#
+# - Vinardo: shares the Vina functional form with re-fitted coefficients;
+#   the same Lennard-Jones limitation applies. No explicit metal correction.
+#
+# - AutoDock4 (ad4): supports atom-type-specific affinity grids and is the
+#   preferred choice for metalloproteins because charged metal centers can be
+#   modeled through AutoGrid affinity maps. Still, the force field lacks a
+#   covalent or partial-covalent coordination term.
+#
+# Practical guidance: for transition-metal active sites (e.g., Zn proteases,
+# heme iron), prefer (a) AD4 with custom affinity maps, (b) constrained
+# docking against a reference metal-coordination geometry, or (c) external
+# rescoring tools such as MetalDock/QM. None of the three native scoring
+# functions reproduces coordination-bond strengths quantitatively, so
+# absolute binding-energy estimates over metals should not be trusted.
+# --------------------------------------------------------------------------- #
 
 try:
     from vina import Vina
@@ -281,7 +310,7 @@ class DockingWorker(QThread):
         if not ligand_results:
             return
         scorer_label = self._scoring_label(scoring_key)
-        self.log_signal.emit(f"Scoring generated poses with {scorer_label}.")
+        self.log_signal.emit(f"Repontuando poses com {scorer_label}.")
         scores = self._score_ligand_results(scoring_key, ligand_results)
         for row in ligand_results:
             row["vina_affinity"] = row["affinity"]
@@ -291,7 +320,7 @@ class DockingWorker(QThread):
                 row["external_score"] = scores[row["mode"]]
             else:
                 row["external_score"] = ""
-        self.log_signal.emit(f"Completed scoring with {scorer_label}.")
+        self.log_signal.emit(f"Repontuação concluída com {scorer_label}.")
 
     def _score_ligand_results(self, scoring_key: str, ligand_results: list[dict]) -> dict[int, float]:
         """Run one bundled scoring package for all poses of a single ligand."""
@@ -488,10 +517,31 @@ class DockingWorker(QThread):
         for ligand_path in self.ligand_paths:
             ligand_result = sanitize_pdbqt_for_vina(ligand_path, self.output_directory, "ligand")
             validate_ligand_pdbqt(ligand_result.path)
+            self._ensure_pdbqt_charges(ligand_result.path, "ligand")
             prepared_ligands.append(ligand_result.path)
             self.ligand_display_names[ligand_result.path] = ligand_path.name
             self._log_sanitization(ligand_path.name, ligand_result)
         self.ligand_paths = prepared_ligands
+
+        for receptor_path, role in (
+            (self.receptor_path, "receptor"),
+            (self.rigid_receptor_path, "rigid_receptor"),
+            (self.flexible_receptor_path, "flex_receptor"),
+        ):
+            if receptor_path is not None:
+                self._ensure_pdbqt_charges(receptor_path, role)
+
+    def _ensure_pdbqt_charges(self, path: Path, role: str) -> None:
+        """Validate column-9 partial charges; auto-repair before Vina parses the file (Issue 21)."""
+        if validate_pdbqt_charges(path):
+            return
+        self.log_signal.emit(
+            f"AVISO: cargas parciais ausentes ou inválidas em {path.name}; corrigindo antes do docking."
+        )
+        if not repair_pdbqt_charges(path, role):
+            raise RuntimeError(
+                f"Falha ao corrigir cargas parciais em {path.name}; o arquivo PDBQT é incompatível com o Vina."
+            )
 
     def _log_sanitization(self, label: str, result) -> None:
         """Log PDBQT sanitization details when a cleaned copy was created."""

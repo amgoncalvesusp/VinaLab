@@ -351,7 +351,7 @@ def _component_sizes(atoms: list[dict], forced_bonds: set[tuple[int, int]]) -> l
     """Return connected-component sizes using BRANCH bonds plus conservative distance bonds."""
     if not atoms:
         return []
-    serial_to_index = {int(atom["serial"]): index for index, atom in enumerate(atoms)}
+    serial_to_index = {atom["serial"]: index for index, atom in enumerate(atoms)}
     graph: list[set[int]] = [set() for _atom in atoms]
     for left_serial, right_serial in forced_bonds:
         left_index = serial_to_index.get(left_serial)
@@ -439,6 +439,253 @@ def _covalent_radius(element: str) -> float:
         "FE": 1.24,
         "CA": 1.74,
     }.get(element.upper(), 0.77)
+
+
+def _pdbqt_charge_token(line: str) -> str:
+    """Return the textual charge token from a PDBQT ATOM/HETATM line.
+
+    AutoDock PDBQT places the partial charge in the second-to-last whitespace
+    token (column ~71-76 in fixed-width layout). Returns "" when no token can
+    be isolated.
+    """
+    parts = line.rstrip("\n").rstrip().split()
+    if len(parts) < 2:
+        return ""
+    return parts[-2]
+
+
+def _pdbqt_atom_type_token(line: str) -> str:
+    """Return the AutoDock atom type token (last column) from a PDBQT line."""
+    parts = line.rstrip("\n").rstrip().split()
+    return parts[-1] if parts else ""
+
+
+def validate_pdbqt_charges(filepath: Path) -> bool:
+    """Return True when every ATOM/HETATM line in `filepath` has a parseable float charge.
+
+    Pre-flight check called before handing a PDBQT to the Vina CLI. Empty token,
+    non-numeric token (e.g., a stray atom type or chain ID slid into column 9),
+    or a missing column counts as failure.
+    """
+    try:
+        text = clean_pdbqt_text(filepath.read_text(encoding="utf-8", errors="replace"))
+    except OSError:
+        return False
+    for line in text.splitlines():
+        if not line.startswith(("ATOM", "HETATM")):
+            continue
+        charge_token = _pdbqt_charge_token(line)
+        if not charge_token:
+            return False
+        try:
+            float(charge_token)
+        except ValueError:
+            return False
+    return True
+
+
+def repair_pdbqt_charges(filepath: Path, role: str = "ligand") -> bool:
+    """Rewrite `filepath` so every ATOM/HETATM line has a numeric charge column.
+
+    For receptors (role in RECEPTOR_ROLES), missing charges are filled with 0.000.
+    For ligands, the function tries to recompute Gasteiger charges via RDKit and
+    falls back to 0.000 when RDKit cannot map the atoms. Returns True when the
+    file is left in a Vina-parseable state.
+    """
+    try:
+        text = clean_pdbqt_text(filepath.read_text(encoding="utf-8", errors="replace"))
+    except OSError:
+        return False
+
+    repaired_lines: list[str] = []
+    needs_repair = False
+    for line in text.splitlines():
+        if not line.startswith(("ATOM", "HETATM")):
+            repaired_lines.append(line)
+            continue
+        charge_token = _pdbqt_charge_token(line)
+        try:
+            float(charge_token)
+            repaired_lines.append(line)
+            continue
+        except ValueError:
+            needs_repair = True
+
+        atom_type = _pdbqt_atom_type_token(line)
+        body = line.rstrip("\n").rstrip()
+        if atom_type and body.endswith(atom_type):
+            body = body[: -len(atom_type)].rstrip()
+        if charge_token and body.endswith(charge_token):
+            body = body[: -len(charge_token)].rstrip()
+        repaired_lines.append(f"{body} {'0.000':>7} {atom_type or 'C'}")
+
+    if not needs_repair:
+        return True
+
+    if role not in RECEPTOR_ROLES:
+        ligand_repaired = _rewrite_ligand_charges_with_rdkit(filepath, repaired_lines)
+        if ligand_repaired is None:
+            ligand_repaired = _rewrite_ligand_charges_with_obabel(filepath, repaired_lines)
+        if ligand_repaired is not None:
+            repaired_lines = ligand_repaired
+
+    filepath.write_text("\n".join(repaired_lines) + "\n", encoding="utf-8")
+    return validate_pdbqt_charges(filepath)
+
+
+def _rewrite_ligand_charges_with_rdkit(filepath: Path, current_lines: list[str]) -> list[str] | None:
+    """Compute Gasteiger charges via RDKit and rewrite PDBQT charge columns.
+
+    PDBQT files keep AutoDock atom-type tokens (e.g., HD, OA, NA) in the last
+    column that RDKit's PDB parser does not understand. The function strips
+    those tokens into a temporary PDB before calling RDKit, computes Gasteiger
+    charges, then rewrites the original PDBQT lines preserving atom types.
+    Returns None when atom counts diverge or RDKit fails entirely.
+    """
+    try:
+        from rdkit import Chem
+        from rdkit.Chem import AllChem
+    except ImportError:
+        return None
+
+    pdb_lines: list[str] = []
+    for line in current_lines:
+        if line.startswith(("ATOM", "HETATM")) and len(line) >= 78:
+            pdb_lines.append(line[:66])
+        elif line.startswith(("ATOM", "HETATM")):
+            pdb_lines.append(line)
+        elif line.startswith(("ROOT", "ENDROOT", "BRANCH", "ENDBRANCH", "TORSDOF")):
+            continue
+        else:
+            pdb_lines.append(line)
+
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".pdb", delete=False, encoding="utf-8"
+    ) as handle:
+        handle.write("\n".join(pdb_lines) + "\n")
+        temp_pdb = Path(handle.name)
+    try:
+        mol = Chem.MolFromPDBFile(str(temp_pdb), removeHs=False, sanitize=False)
+        if mol is None:
+            return None
+        try:
+            Chem.SanitizeMol(mol)
+        except Exception:  # noqa: BLE001 - fall through to partial sanitize
+            try:
+                Chem.SanitizeMol(
+                    mol,
+                    sanitizeOps=Chem.SanitizeFlags.SANITIZE_ALL
+                    ^ Chem.SanitizeFlags.SANITIZE_PROPERTIES,
+                )
+            except Exception:  # noqa: BLE001
+                return None
+        try:
+            AllChem.ComputeGasteigerCharges(mol)
+        except Exception:  # noqa: BLE001
+            return None
+
+        charges: list[float] = []
+        for atom in mol.GetAtoms():
+            if not atom.HasProp("_GasteigerCharge"):
+                return None
+            try:
+                value = float(atom.GetProp("_GasteigerCharge"))
+            except ValueError:
+                return None
+            if value != value:  # NaN
+                return None
+            charges.append(value)
+    finally:
+        try:
+            temp_pdb.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    atom_indices = [
+        index for index, line in enumerate(current_lines) if line.startswith(("ATOM", "HETATM"))
+    ]
+    if len(atom_indices) != len(charges):
+        return None
+
+    updated = list(current_lines)
+    for line_index, charge in zip(atom_indices, charges):
+        original = updated[line_index]
+        atom_type = _pdbqt_atom_type_token(original)
+        body = original.rstrip("\n").rstrip()
+        old_charge = _pdbqt_charge_token(original)
+        if atom_type and body.endswith(atom_type):
+            body = body[: -len(atom_type)].rstrip()
+        if old_charge and body.endswith(old_charge):
+            body = body[: -len(old_charge)].rstrip()
+        updated[line_index] = f"{body} {charge:7.3f} {atom_type or 'C'}"
+    return updated
+
+
+def _rewrite_ligand_charges_with_obabel(filepath: Path, current_lines: list[str]) -> list[str] | None:
+    """Open Babel fallback: regenerate PDBQT and copy its charges into current lines."""
+    import shutil
+    import subprocess
+    import sys
+
+    obabel = shutil.which("obabel")
+    if obabel is None:
+        candidate = Path(sys.executable).resolve().parent / (
+            "obabel.exe" if sys.platform.startswith("win") else "obabel"
+        )
+        obabel = str(candidate) if candidate.exists() else None
+    if obabel is None:
+        return None
+
+    import tempfile
+
+    no_window = subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0
+    with tempfile.NamedTemporaryFile(suffix=".pdbqt", delete=False) as handle:
+        regen_path = Path(handle.name)
+    try:
+        completed = subprocess.run(
+            [obabel, str(filepath), "-O", str(regen_path), "--partialcharge", "gasteiger"],
+            capture_output=True,
+            text=True,
+            check=False,
+            creationflags=no_window,
+        )
+        if completed.returncode != 0 or not regen_path.exists():
+            return None
+        regen_lines = clean_pdbqt_text(
+            regen_path.read_text(encoding="utf-8", errors="replace")
+        ).splitlines()
+    finally:
+        try:
+            regen_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    regen_atom_lines = [line for line in regen_lines if line.startswith(("ATOM", "HETATM"))]
+    original_atom_indices = [
+        index for index, line in enumerate(current_lines) if line.startswith(("ATOM", "HETATM"))
+    ]
+    if len(regen_atom_lines) != len(original_atom_indices):
+        return None
+
+    updated = list(current_lines)
+    for original_index, regen_line in zip(original_atom_indices, regen_atom_lines):
+        new_charge = _pdbqt_charge_token(regen_line)
+        try:
+            charge_value = float(new_charge)
+        except ValueError:
+            continue
+        original_line = updated[original_index]
+        atom_type = _pdbqt_atom_type_token(original_line)
+        body = original_line.rstrip("\n").rstrip()
+        old_charge = _pdbqt_charge_token(original_line)
+        if atom_type and body.endswith(atom_type):
+            body = body[: -len(atom_type)].rstrip()
+        if old_charge and body.endswith(old_charge):
+            body = body[: -len(old_charge)].rstrip()
+        updated[original_index] = f"{body} {charge_value:7.3f} {atom_type or 'C'}"
+    return updated
 
 
 def sanitize_pdbqt_for_vina(input_path: Path, output_directory: Path, role: str) -> PdbqtSanitizationResult:

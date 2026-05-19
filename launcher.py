@@ -13,6 +13,16 @@ from tkinter import messagebox, ttk
 from core.i18n import I18n
 
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0
+
+
+def _open_path(path) -> None:
+    """Open a file or directory with the OS default handler (cross-platform)."""
+    if sys.platform.startswith("win"):
+        os.startfile(path)  # type: ignore[attr-defined]
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", str(path)])
+    else:
+        subprocess.Popen(["xdg-open", str(path)])
 BG_DARK = "#0f1117"
 BG_CARD = "#1a1d27"
 ACCENT = "#4f8ef7"
@@ -128,7 +138,7 @@ class BootstrapWindow:
         )
         self.launch_button.pack(side="left")
         self.retry_button = ttk.Button(button_frame, text=I18n.get("retry_button", self.lang), command=self._retry)
-        self.log_button = ttk.Button(button_frame, text=I18n.get("open_log_button", self.lang))
+        self.log_button = ttk.Button(button_frame, text=I18n.get("open_log_button", self.lang), command=lambda: None)
         self.cancel_button = ttk.Button(button_frame, text="Cancelar", command=self.cancel)
         self.cancel_button.pack(side="right")
         self.note_label = ttk.Label(container, text="", wraplength=700)
@@ -222,7 +232,7 @@ class BootstrapWindow:
         if self.retry_button is not None:
             self.retry_button.pack(side="left", padx=(0, 8))
         if manager and self.log_button is not None:
-            self.log_button.configure(command=lambda: os.startfile(manager.error_log_path))
+            self.log_button.configure(command=lambda: _open_path(manager.error_log_path))
             self.log_button.pack(side="left")
 
     def _retry(self) -> None:

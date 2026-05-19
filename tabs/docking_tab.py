@@ -347,11 +347,12 @@ class DockingTab(QWidget):
         self.size_preset_combo = QComboBox()
         self.snap_atom_button = QPushButton()
         self.snap_ligand_button = QPushButton()
+        self.blind_dock_button = QPushButton()
         self.save_box_button = QPushButton()
-        self.load_box_combo = QComboBox()
+        self.load_box_button = QPushButton()
         self.box_presets_path = Path(__file__).resolve().parents[1] / "config" / "box_presets.json"
         self.exhaustiveness = self._spin(1, 512, 8)
-        self.num_modes = self._spin(1, 20, 9)
+        self.num_modes = self._spin(1, 20, 9)  # max poses raised to 20
         self.energy_range = self._double_spin(1, 10, 0.5, 1, 3.0)
         self.cpu = self._spin(0, 64, 0)
         self.seed = self._spin(0, 2147483647, 0)
@@ -579,6 +580,14 @@ class DockingTab(QWidget):
         self.reload_atoms_button.setText(I18n.get("load_receptor_atoms", lang))
         self.snap_atom_button.setText(I18n.get("snap_selected_atom", lang))
         self.snap_ligand_button.setText(I18n.get("snap_crystal_ligand", lang))
+        self.blind_dock_button.setText(
+            "Modo blind docking (Rg)" if lang == "pt" else "Blind docking (Rg)"
+        )
+        self.blind_dock_button.setToolTip(
+            "Calcula o raio de giração do ligante e define tamanho da caixa = 2*Rg + 2 Å, centralizada no centroide."
+            if lang == "pt"
+            else "Computes ligand radius of gyration and sets box size = 2*Rg + 2 Å centered on the centroid."
+        )
         self.save_box_button.setText(I18n.get("save_box", lang))
         self.run_button.setText(I18n.get("run_docking", lang))
         self.output_button.setText(I18n.get("browse_button", lang))
@@ -591,7 +600,8 @@ class DockingTab(QWidget):
         self.snap_atom_button.setToolTip("Use o átomo do receptor selecionado na árvore como centro da caixa.")
         self.snap_ligand_button.setToolTip("Carregue um ligante PDBQT de referência e defina o centro no centro geométrico.")
         self.save_box_button.setToolTip("Salve o centro e o tamanho atuais como predefinição local nomeada.")
-        self.load_box_combo.setToolTip("Carregue uma predefinição salva da caixa de busca.")
+        self.load_box_button.setText("Carregar predefinição...")
+        self.load_box_button.setToolTip("Carregue uma predefinição salva da caixa de busca (arquivo JSON).")
         self.exhaustiveness.setToolTip(I18n.get("tip_exhaustiveness", lang))
         self.num_modes.setToolTip(I18n.get("tip_num_modes", lang))
         self.energy_range.setToolTip(I18n.get("tip_energy_range", lang))
@@ -673,18 +683,68 @@ class DockingTab(QWidget):
         """Create snap-to-center shortcut buttons."""
         self.snap_atom_button.clicked.connect(self._snap_to_selected_atom)
         self.snap_ligand_button.clicked.connect(self._snap_to_crystallographic_ligand)
+        self.blind_dock_button.clicked.connect(self._apply_blind_docking_box)
         row = QHBoxLayout()
         row.addWidget(self.snap_atom_button)
         row.addWidget(self.snap_ligand_button)
+        row.addWidget(self.blind_dock_button)
         return row
+
+    def _apply_blind_docking_box(self) -> None:
+        """Compute ligand radius of gyration and set the box around its centroid."""
+        from core.file_utils import pdbqt_coordinates
+
+        ligand_paths = self.setup_provider.ligand_paths()
+        if not ligand_paths:
+            QMessageBox.warning(
+                self,
+                I18n.get("warning_title", self.lang),
+                "Selecione ao menos um ligante antes de calcular o blind docking.",
+            )
+            return
+
+        coordinates: list[tuple[float, float, float]] = []
+        for path in ligand_paths:
+            coordinates.extend(pdbqt_coordinates(path))
+        if not coordinates:
+            QMessageBox.warning(
+                self,
+                I18n.get("warning_title", self.lang),
+                "Não foi possível ler coordenadas do(s) ligante(s).",
+            )
+            return
+
+        count = len(coordinates)
+        cx = sum(point[0] for point in coordinates) / count
+        cy = sum(point[1] for point in coordinates) / count
+        cz = sum(point[2] for point in coordinates) / count
+        squared_sum = sum(
+            (point[0] - cx) ** 2 + (point[1] - cy) ** 2 + (point[2] - cz) ** 2
+            for point in coordinates
+        )
+        rg = (squared_sum / count) ** 0.5
+        box_side = min(126.0, max(1.0, 2.0 * rg + 2.0))
+
+        self.center_x.setValue(cx)
+        self.center_y.setValue(cy)
+        self.center_z.setValue(cz)
+        self.size_x.setValue(box_side)
+        self.size_y.setValue(box_side)
+        self.size_z.setValue(box_side)
+        self.parameters_changed.emit(self.current_parameters())
+        self.box_changed.emit(self.current_box())
+        QMessageBox.information(
+            self,
+            I18n.get("success_title", self.lang),
+            f"Blind docking: Rg = {rg:.2f} Å, lado da caixa = {box_side:.2f} Å, centroide ({cx:.3f}, {cy:.3f}, {cz:.3f}).",
+        )
 
     def _box_preset_row(self) -> QHBoxLayout:
         """Create save/load controls for named box presets."""
         self.save_box_button.clicked.connect(self._save_box_preset)
-        self.load_box_combo.currentTextChanged.connect(self._load_box_preset)
-        self._refresh_box_preset_combo()
+        self.load_box_button.clicked.connect(self._load_box_preset)
         row = QHBoxLayout()
-        row.addWidget(self.load_box_combo)
+        row.addWidget(self.load_box_button)
         row.addWidget(self.save_box_button)
         return row
 
@@ -720,26 +780,32 @@ class DockingTab(QWidget):
             self.setup_provider.selection_changed.connect(self._refresh_pre_run_checklist)
 
     def fit_grid_to_ligands(self) -> None:
-        """Fit only the box size to ligand bounds, keeping the receptor-point center unchanged."""
+        """Set a uniform cubic box size from ligand bounds; do not touch the box center.
+
+        Per Issues 12 and 18: use the largest of the three axis extents as the uniform
+        cubic side, plus 1 Å of padding. The box center is kept untouched so users
+        can position the search box independently.
+        """
         ligand_paths = self.setup_provider.ligand_paths()
         bounds = pdbqt_coordinate_bounds(ligand_paths)
         if bounds is None:
             QMessageBox.warning(self, I18n.get("warning_title", self.lang), I18n.get("auto_grid_failed", self.lang))
             return
 
-        padding = 4.0
-        size = tuple(min(126.0, max(1.0, axis_bounds[1] - axis_bounds[0] + padding)) for axis_bounds in bounds)
-        self.size_x.setValue(size[0])
-        self.size_y.setValue(size[1])
-        self.size_z.setValue(size[2])
+        extents = tuple(axis_bounds[1] - axis_bounds[0] for axis_bounds in bounds)
+        cube_side = min(126.0, max(1.0, max(extents) + 1.0))
+        self.size_x.setValue(cube_side)
+        self.size_y.setValue(cube_side)
+        self.size_z.setValue(cube_side)
         self.parameters_changed.emit(self.current_parameters())
         self.box_changed.emit(self.current_box())
         QMessageBox.information(
             self,
             I18n.get("success_title", self.lang),
             (
-                "Centro da caixa de busca mantido a partir dos campos do ponto receptor/proteína. "
-                f"Tamanho da caixa atualizado para ({size[0]:.1f}, {size[1]:.1f}, {size[2]:.1f})."
+                "Centro da caixa de busca mantido. "
+                f"Maior extensão do ligante: {max(extents):.2f} Å. "
+                f"Lado da caixa (cubo) definido em {cube_side:.2f} Å (maior extensão + 1 Å)."
             ),
         )
 
@@ -788,8 +854,15 @@ class DockingTab(QWidget):
         self._set_center_from_xyz(x, y, z)
 
     def _snap_to_crystallographic_ligand(self) -> None:
-        """Set the box center from the geometric center of a reference ligand."""
-        file_name, _ = QFileDialog.getOpenFileName(self, "Ligante cristalográfico", "", "Arquivos PDBQT (*.pdbqt);;Todos os arquivos (*)")
+        """Set the box center from the geometric center of a reference ligand.
+
+        Issue 5 — clarification: this option assumes the user has a co-crystal
+        (holo) structure with a bound reference ligand whose centroid marks the
+        binding site. For homology models, apo structures, or de novo binding
+        sites where no reference ligand is available, the user must define the
+        box center manually (manual XYZ entry, atom snap, or blind docking).
+        """
+        file_name, _ = QFileDialog.getOpenFileName(self, "Ligante de referência (co-cristal)", "", "Arquivos PDBQT (*.pdbqt);;Todos os arquivos (*)")
         if not file_name:
             return
         bounds = pdbqt_coordinate_bounds([Path(file_name)])
@@ -816,33 +889,52 @@ class DockingTab(QWidget):
         presets[name.strip()] = self.current_box()
         self.box_presets_path.parent.mkdir(parents=True, exist_ok=True)
         self.box_presets_path.write_text(json.dumps(presets, indent=2), encoding="utf-8")
-        self._refresh_box_preset_combo(name.strip())
 
-    def _load_box_preset(self, name: str) -> None:
-        """Load a saved search-box preset."""
-        if not name or name == "Carregar predefinição":
+    def _load_box_preset(self) -> None:
+        """Load a saved search-box preset from a JSON file via native dialog."""
+        start_dir = str(self.box_presets_path.parent) if self.box_presets_path.parent.exists() else ""
+        file_name, _ = QFileDialog.getOpenFileName(
+            self,
+            "Carregar predefinição",
+            start_dir,
+            "Predefinições JSON (*.json);;Todos os arquivos (*)",
+        )
+        if not file_name:
             return
-        preset = self._read_box_presets().get(name)
+        try:
+            data = json.loads(Path(file_name).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            QMessageBox.warning(self, "Carregar predefinição", f"Falha ao ler arquivo: {exc}")
+            return
+        preset: dict | None = None
+        if isinstance(data, dict) and any(key.startswith("center_") or key.startswith("size_") for key in data):
+            preset = data
+        elif isinstance(data, dict) and data:
+            name, ok = QInputDialog.getItem(
+                self, "Carregar predefinição", "Selecione a predefinição:", sorted(data.keys()), 0, False
+            )
+            if not ok:
+                return
+            candidate = data.get(name)
+            preset = candidate if isinstance(candidate, dict) else None
         if not preset:
+            QMessageBox.warning(self, "Carregar predefinição", "Arquivo não contém campos de caixa válidos.")
             return
-        self.center_x.setValue(float(preset.get("center_x", self.center_x.value())))
-        self.center_y.setValue(float(preset.get("center_y", self.center_y.value())))
-        self.center_z.setValue(float(preset.get("center_z", self.center_z.value())))
-        self.size_x.setValue(float(preset.get("size_x", self.size_x.value())))
-        self.size_y.setValue(float(preset.get("size_y", self.size_y.value())))
-        self.size_z.setValue(float(preset.get("size_z", self.size_z.value())))
+        for key, widget in {
+            "center_x": self.center_x,
+            "center_y": self.center_y,
+            "center_z": self.center_z,
+            "size_x": self.size_x,
+            "size_y": self.size_y,
+            "size_z": self.size_z,
+        }.items():
+            if key in preset:
+                try:
+                    widget.setValue(float(preset[key]))
+                except (TypeError, ValueError):
+                    continue
+        self.parameters_changed.emit(self.current_parameters())
         self.box_changed.emit(self.current_box())
-
-    def _refresh_box_preset_combo(self, selected: str = "") -> None:
-        """Refresh saved preset names in the load combo."""
-        presets = self._read_box_presets()
-        self.load_box_combo.blockSignals(True)
-        self.load_box_combo.clear()
-        self.load_box_combo.addItem("Carregar predefinição")
-        self.load_box_combo.addItems(sorted(presets))
-        if selected:
-            self.load_box_combo.setCurrentText(selected)
-        self.load_box_combo.blockSignals(False)
 
     def _read_box_presets(self) -> dict:
         """Read saved search-box presets from local config."""
@@ -944,6 +1036,9 @@ class DockingTab(QWidget):
         self.atom_tree.setHeaderLabels(["Residue/Atom", "X", "Y", "Z"])
         self.atom_tree.setRootIsDecorated(True)
         self.atom_tree.setUniformRowHeights(True)
+        self.atom_tree.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.atom_tree.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.atom_tree.setMinimumHeight(240)
         self.atom_tree.setVisible(False)
         self.reload_atoms_button.setVisible(False)
         self.atom_status_label.setObjectName("label_muted")

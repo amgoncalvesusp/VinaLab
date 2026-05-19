@@ -1,0 +1,746 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VinaLab v0.0.2 — Arquitetura e Guia de Uso</title>
+<style>
+  :root {
+    --bg: #0e1116;
+    --surface: #161b22;
+    --surface-2: #1f2630;
+    --border: #2a313c;
+    --text: #e6edf3;
+    --muted: #8b95a5;
+    --accent: #6aa9ff;
+    --accent-2: #a371f7;
+    --ok: #3fb950;
+    --warn: #d29922;
+    --err: #f85149;
+    --mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans); }
+  body { display: grid; grid-template-columns: 280px 1fr; min-height: 100vh; }
+  aside {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 24px 16px;
+    position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  }
+  aside h1 {
+    font-size: 1.05rem; margin: 0 0 4px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    font-weight: 800; letter-spacing: 0.5px;
+  }
+  aside .ver { font-size: 0.75rem; color: var(--muted); margin-bottom: 18px; }
+  nav a {
+    display: block; padding: 7px 10px; margin: 2px 0;
+    color: var(--text); text-decoration: none; border-radius: 6px;
+    font-size: 0.9rem; border-left: 2px solid transparent;
+  }
+  nav a:hover { background: var(--surface-2); }
+  nav a.active { background: var(--surface-2); border-left-color: var(--accent); color: var(--accent); }
+  nav .group { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; margin: 14px 10px 4px; letter-spacing: 1px; }
+  main { padding: 32px 56px 80px; max-width: 1100px; }
+  section { display: none; animation: fade 0.3s ease; }
+  section.active { display: block; }
+  @keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  h2 { font-size: 1.7rem; margin-top: 0; border-bottom: 1px solid var(--border); padding-bottom: 12px; }
+  h3 { color: var(--accent); margin-top: 32px; font-size: 1.15rem; }
+  h4 { color: var(--accent-2); margin-top: 22px; font-size: 1rem; }
+  p, li { line-height: 1.65; }
+  code { font-family: var(--mono); background: var(--surface-2); padding: 2px 6px; border-radius: 4px; font-size: 0.85em; color: #ffd580; }
+  pre { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 18px; overflow-x: auto; font-family: var(--mono); font-size: 0.85rem; line-height: 1.5; }
+  pre code { background: transparent; color: #cde3ff; padding: 0; }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 0.72rem; font-weight: 600; margin-right: 6px; }
+  .pill.ok { background: rgba(63,185,80,0.15); color: var(--ok); border: 1px solid rgba(63,185,80,0.3); }
+  .pill.warn { background: rgba(210,153,34,0.15); color: var(--warn); border: 1px solid rgba(210,153,34,0.3); }
+  .pill.err { background: rgba(248,81,73,0.15); color: var(--err); border: 1px solid rgba(248,81,73,0.3); }
+  .pill.info { background: rgba(106,169,255,0.15); color: var(--accent); border: 1px solid rgba(106,169,255,0.3); }
+  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin: 18px 0; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+  .card h4 { margin-top: 0; }
+  .card .meta { color: var(--muted); font-size: 0.78rem; margin-bottom: 10px; }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 0.9rem; }
+  th, td { padding: 8px 12px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+  th { color: var(--accent); font-weight: 600; }
+  tr:hover td { background: var(--surface-2); }
+  .step { display: flex; gap: 16px; margin: 18px 0; align-items: flex-start; }
+  .step .num {
+    flex: 0 0 36px; height: 36px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; color: #fff;
+  }
+  .step .body { flex: 1; }
+  .step .body h4 { margin: 4px 0 6px; color: var(--text); }
+  details { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; margin: 10px 0; }
+  details summary { cursor: pointer; font-weight: 600; color: var(--accent); }
+  details[open] summary { margin-bottom: 8px; }
+  .callout { padding: 12px 16px; border-radius: 8px; margin: 14px 0; border-left: 4px solid var(--accent); background: rgba(106,169,255,0.06); }
+  .callout.warn { border-left-color: var(--warn); background: rgba(210,153,34,0.06); }
+  .callout.err { border-left-color: var(--err); background: rgba(248,81,73,0.06); }
+  .callout.ok { border-left-color: var(--ok); background: rgba(63,185,80,0.06); }
+  .mermaid { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin: 14px 0; text-align: center; }
+  kbd { font-family: var(--mono); background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: 0.78em; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 28px 0; }
+  @media (max-width: 920px) {
+    body { grid-template-columns: 1fr; }
+    aside { position: relative; height: auto; }
+    main { padding: 24px; }
+  }
+</style>
+</head>
+<body>
+<aside>
+  <h1>VinaLab</h1>
+  <div class="ver">v0.0.2 · Documentação interativa</div>
+  <nav id="nav">
+    <div class="group">Introdução</div>
+    <a href="#overview" data-target="overview" class="active">Visão geral</a>
+    <a href="#stack" data-target="stack">Stack técnica</a>
+
+    <div class="group">Arquitetura</div>
+    <a href="#layout" data-target="layout">Estrutura de pastas</a>
+    <a href="#modules" data-target="modules">Módulos core</a>
+    <a href="#pipeline" data-target="pipeline">Pipeline de docking</a>
+    <a href="#charges" data-target="charges">Validação de cargas</a>
+
+    <div class="group">Interface</div>
+    <a href="#tabs" data-target="tabs">Tabs e fluxo</a>
+    <a href="#prepare" data-target="prepare">Preparar Proteína</a>
+    <a href="#converter" data-target="converter">Conversor</a>
+    <a href="#docking" data-target="docking">Setup + Docking</a>
+    <a href="#results" data-target="results">Resultados</a>
+
+    <div class="group">Como usar</div>
+    <a href="#install" data-target="install">Instalação</a>
+    <a href="#workflow" data-target="workflow">Workflow guiado</a>
+    <a href="#scoring" data-target="scoring">Funções de pontuação</a>
+    <a href="#troubleshoot" data-target="troubleshoot">Solução de problemas</a>
+
+    <div class="group">Referência</div>
+    <a href="#changelog" data-target="changelog">Changelog</a>
+    <a href="#faq" data-target="faq">FAQ</a>
+  </nav>
+</aside>
+
+<main>
+
+<section id="overview" class="active">
+  <h2>Visão geral</h2>
+  <p>VinaLab é interface gráfica desktop (PySide6) para AutoDock Vina 1.2.x, com suporte a múltiplas funções de pontuação, triagem em lote, visualização 3D e relatórios PDF. Bilíngue PT-BR/EN.</p>
+
+  <div class="grid">
+    <div class="card">
+      <h4>🧬 Docking molecular</h4>
+      <div class="meta">Núcleo</div>
+      <p>Vina API Python + fallback CLI incluído, GNINA opcional, Vinardo, AD4. Rescoring com RTMScore e DeltaVinaXGB.</p>
+    </div>
+    <div class="card">
+      <h4>⚙️ Conversão</h4>
+      <div class="meta">PDB · MOL2 · SDF · MOL · PDBQT</div>
+      <p>RDKit + Meeko (preferido) com fallback Open Babel. Cargas Gasteiger validadas antes do docking.</p>
+    </div>
+    <div class="card">
+      <h4>🧪 Triagem virtual</h4>
+      <div class="meta">Modo Triagem</div>
+      <p>Pasta com múltiplos PDBQT, cada ligante processado em sequência, agrupamento por cluster, consenso Borda/Z-score.</p>
+    </div>
+    <div class="card">
+      <h4>📊 Análise interativa</h4>
+      <div class="meta">Resultados</div>
+      <p>Tabela filtrável, viewer 3D embutido, plot de consenso 2D/3D, exportação Excel/CSV/PDB complexo.</p>
+    </div>
+    <div class="card">
+      <h4>📄 Relatórios</h4>
+      <div class="meta">ReportLab</div>
+      <p>PDF com parâmetros, gráfico, top poses, interações. Resumo automatizado para arquivo de projeto.</p>
+    </div>
+    <div class="card">
+      <h4>🌐 Bilíngue</h4>
+      <div class="meta">PT-BR + EN</div>
+      <p>Alternância em tempo real via menu Idioma. Persistência em <code>user_prefs.json</code>.</p>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>Filosofia.</strong> Cada tab numerada representa uma etapa do workflow científico. Conversor (1) → Preparar Proteína (2) → Docking (3) → Relatório (4). Resultados visíveis em painel lateral fixo.
+  </div>
+</section>
+
+<section id="stack">
+  <h2>Stack técnica</h2>
+  <table>
+    <tr><th>Camada</th><th>Tecnologia</th><th>Função</th></tr>
+    <tr><td>GUI</td><td>PySide6 ≥6.7</td><td>Widgets, threading, QWebEngine para viewer 3D</td></tr>
+    <tr><td>Docking</td><td>AutoDock Vina 1.2.7</td><td>API Python + CLI fallback bundled</td></tr>
+    <tr><td>Cheminformatics</td><td>RDKit, Meeko</td><td>Parse, sanitização, cargas Gasteiger, escrita PDBQT</td></tr>
+    <tr><td>Conversão</td><td>Open Babel</td><td>Fallback de conversão, protonação</td></tr>
+    <tr><td>Análise</td><td>pandas, matplotlib, mplcursors</td><td>Tabela, gráficos, hover interativo</td></tr>
+    <tr><td>Visualização 3D</td><td>3Dmol.js / py3Dmol</td><td>Renderização receptor + pose dentro de QWebEngineView</td></tr>
+    <tr><td>Relatório</td><td>ReportLab, openpyxl</td><td>PDF e Excel formatado</td></tr>
+    <tr><td>Empacotamento</td><td>PyInstaller, GitHub Actions</td><td>Build nativo Windows/macOS/Linux a partir de tags <code>v*</code></td></tr>
+    <tr><td>ML opcional</td><td>PyTorch CPU, DGL, MDAnalysis, ProDy</td><td>Rescoring RTMScore e DeltaVinaXGB</td></tr>
+  </table>
+</section>
+
+<section id="layout">
+  <h2>Estrutura de pastas</h2>
+<pre><code>vinagui/
+├── main.py                    # entry point
+├── mainwindow.py              # MainWindow (orquestra tabs + signals)
+├── launcher.py                # bootstrap .venv (modo dev)
+├── architecture.html          # este documento
+├── core/
+│   ├── docking_engine.py      # DockingWorker QThread, scoring, charges check
+│   ├── converter.py           # FileConverter (PDB/MOL2/SDF -> PDBQT)
+│   ├── file_utils.py          # PDBQT sanitize, validate_pdbqt_charges, repair
+│   ├── i18n.py                # registry bilíngue PT/EN
+│   ├── environment_manager.py # detecta deps (vina, RDKit, meeko, GNINA…)
+│   ├── responsive.py          # perfis 1280/1920/2560
+│   └── scrolling.py           # ScrollManager.wrap (QScrollArea)
+├── tabs/
+│   ├── prepare_protein_tab.py # NEW: PDB -> strip HETATM -> chain filter
+│   ├── docking_tab.py         # ScoringFunctionSelector + DockingTab
+│   ├── setup_tab.py           # receptor + ligante (rígido/flex)
+│   ├── results_tab.py         # tabela + 3D viewer + consensus plot
+│   └── report_tab.py          # PDF report builder
+├── ui/
+│   ├── converter_widget.py    # ConverterWidget
+│   ├── welcome_dialog.py      # primeira execução
+│   ├── about_dialog.py
+│   ├── help_panel.py          # painel contextual de ajuda
+│   └── splash.py
+├── tools/                     # binários nativos opcionais
+│   ├── vina/vina_1.2.7_win.exe
+│   └── gnina/gnina.exe
+├── pontuacao/                 # bundles de scoring externo (.zip)
+│   ├── deltaVinaXGB-Light.zip
+│   └── RTMScore-main.zip
+├── config/                    # user_prefs.json, box_presets.json
+├── tests/
+└── requirements.txt</code></pre>
+</section>
+
+<section id="modules">
+  <h2>Módulos core</h2>
+
+  <h3>core/docking_engine.py</h3>
+  <p><span class="pill info">QThread</span> <span class="pill ok">Threaded</span> Executa jobs Vina fora da GUI thread.</p>
+  <ul>
+    <li><code>DockingWorker(QThread)</code> — emite <code>progress_signal</code>, <code>log_signal</code>, <code>result_signal</code>, <code>error_signal</code>.</li>
+    <li><code>VINA_SCORING_NAMES</code> — mapeia <code>vina/vinardo/ad4/gnina</code>.</li>
+    <li><code>EXTERNAL_SCORING_ARCHIVES</code> — pacotes em <code>pontuacao/</code>: DeltaVinaRF20, DeltaVinaXGB-Light, RTMScore.</li>
+    <li><code>_ensure_pdbqt_charges()</code> — chamado antes do Vina; valida coluna 9 e repara via RDKit/OBabel se inválida.</li>
+    <li><code>parse_output_pdbqt()</code> — extrai <code>REMARK VINA RESULT</code>, <code>CNNscore</code>, <code>CNNaffinity</code>.</li>
+  </ul>
+
+  <h3>core/converter.py</h3>
+  <p>Pipeline determinístico RDKit + Meeko com fallback OBabel:</p>
+<pre><code># Ligante
+RDKit (MolFromMol2File|MolFromPDBFile|SDMolSupplier)
+  ↳ fallback MOL2: _mol2_fallback_via_molblock (extrai @&lt;TRIPOS&gt;ATOM/BOND -> V2000)
+  ↳ Sanitize + Kekulize + AddHs(addCoords=True)
+  ↳ ComputeGasteigerCharges
+  ↳ Meeko MoleculePreparation.prepare(mol)
+  ↳ PDBQTWriterLegacy.write_string()
+  ↳ validate_ligand_pdbqt + _validate_ligand_bond_geometry
+
+# Receptor
+PDB -> mk_prepare_receptor.py (se disponível)
+       ↳ fallback obabel -xr
+MOL2 -> obabel mol2->pdb -> pipeline acima</code></pre>
+
+  <h3>core/file_utils.py</h3>
+  <ul>
+    <li><code>sanitize_pdbqt_for_vina(input, output_dir, role)</code> — remove tags incompatíveis (BRANCH/ROOT em receptor, etc.), normaliza tipos atômicos AutoDock.</li>
+    <li><code>validate_ligand_pdbqt(path)</code> — atom_count &gt; 0, sem múltiplos MODEL, componente conexo único.</li>
+    <li><code>validate_pdbqt_charges(filepath) -&gt; bool</code> — preflight: cada ATOM/HETATM com float parseável na coluna de carga.</li>
+    <li><code>repair_pdbqt_charges(filepath, role)</code> — RDKit Gasteiger → Open Babel <code>--partialcharge gasteiger</code> → fill 0.000.</li>
+    <li><code>pdbqt_coordinate_bounds()</code>, <code>pdbqt_coordinates()</code>, <code>pdbqt_receptor_atoms()</code> — geometria.</li>
+  </ul>
+
+  <h3>core/i18n.py</h3>
+  <p>Registro central <code>I18n.STRINGS</code> com chave → <code>{"pt":..., "en":...}</code>. Métodos: <code>get(key, lang)</code>, <code>load_lang(prefs_path)</code>, <code>save_lang(lang, prefs_path)</code>. Persistência em <code>config/user_prefs.json</code>.</p>
+
+  <h3>core/environment_manager.py</h3>
+  <p>Detecta dependências obrigatórias (vina/RDKit/meeko) + opcionais (GNINA, RTMScore deps). Gera <code>status_report</code> cacheado consumido pelo botão "Corrigir agora".</p>
+</section>
+
+<section id="pipeline">
+  <h2>Pipeline de docking</h2>
+  <p>Diagrama de fluxo do <code>DockingWorker</code>:</p>
+  <div class="mermaid">
+flowchart TD
+    A[Receptor + Ligantes PDBQT] --> B[sanitize_pdbqt_for_vina]
+    B --> C[validate_ligand_pdbqt]
+    C --> D{validate_pdbqt_charges}
+    D -- invalido --> E[repair_pdbqt_charges]
+    D -- ok --> F[Para cada scoring selecionada]
+    E --> F
+    F --> G{scoring_key}
+    G -- vina/vinardo/ad4 --> H[Vina API / CLI]
+    G -- gnina --> I[gnina.exe CLI]
+    G -- rtmscore/dxgb --> J[Vina + rescoring externo]
+    H --> K[parse_output_pdbqt]
+    I --> K
+    J --> K
+    K --> L[result_signal -> ResultsTab]
+    L --> M[Consensus + Cluster + Chart + Plot]
+  </div>
+
+  <h3>Sequência de signals</h3>
+<pre><code>DockingTab.launch_docking()
+  └─ DockingWorker.start()
+       ├─ progress_signal(int) ─────────→ ProgressBar
+       ├─ log_signal(str) ──────────────→ ResultsTab.append_log()
+       ├─ result_signal(list[dict]) ────→ ResultsTab.add_results()
+       │                                    ├─ _update_consensus_tab()
+       │                                    ├─ _update_clusters_tab()
+       │                                    ├─ _update_chart()
+       │                                    └─ _update_consensus_plot()
+       └─ error_signal(str) ────────────→ QMessageBox.critical</code></pre>
+</section>
+
+<section id="charges">
+  <h2>Validação de cargas (Issue 21)</h2>
+  <p>AutoDock Vina exige que a coluna 9 do registro ATOM/HETATM contenha float parseável (carga parcial Gasteiger).</p>
+
+  <div class="callout err">
+    <strong>Bug histórico.</strong> Ligantes convertidos sem cargas válidas faziam o Vina abortar com <code>PDBQT parsing error: Charge "A " is not valid</code>.
+  </div>
+
+  <h3>Estratégia de reparo</h3>
+  <ol>
+    <li><strong>RDKit Gasteiger</strong> — Strip dos tokens AutoDock (HD, OA, NA…) para um PDB temporário (colunas 1-66), aplica <code>SanitizeMol</code> + <code>ComputeGasteigerCharges</code>, reescreve coluna 9 preservando tipos atômicos originais.</li>
+    <li><strong>Open Babel</strong> — <code>obabel in.pdbqt -O out.pdbqt --partialcharge gasteiger</code>, copia cargas re-geradas para o arquivo original.</li>
+    <li><strong>Fallback 0.000</strong> — Para receptores e ligantes onde as duas estratégias falharam. Vina aceita o arquivo, mas a precisão energética degrada.</li>
+  </ol>
+
+  <pre><code># API exposta
+from core.file_utils import validate_pdbqt_charges, repair_pdbqt_charges
+
+if not validate_pdbqt_charges(path):
+    repair_pdbqt_charges(path, role="ligand")   # ou "receptor"/"rigid_receptor"/"flex_receptor"</code></pre>
+</section>
+
+<section id="tabs">
+  <h2>Tabs e fluxo</h2>
+  <p>Ordem atual (após Issue 6):</p>
+  <table>
+    <tr><th>#</th><th>Tab</th><th>Widget</th><th>Função principal</th></tr>
+    <tr><td>0</td><td>Conversor (opcional)</td><td><code>ConverterWidget</code></td><td>PDB/MOL2/SDF → PDBQT</td></tr>
+    <tr><td>1</td><td>Preparar Proteína</td><td><code>PrepareProteinTab</code></td><td>Strip HETATM, cadeia, +H</td></tr>
+    <tr><td>2</td><td>Docking</td><td><code>SetupTab</code> + <code>DockingTab</code></td><td>Configuração + execução</td></tr>
+    <tr><td>3</td><td>Relatório</td><td><code>ReportTab</code></td><td>PDF + Excel</td></tr>
+  </table>
+  <p>Painel lateral fixo: <code>ResultsTab</code> com sub-tabs Resultados / Interações / Consenso / Consensus Plot / Clusters.</p>
+</section>
+
+<section id="prepare">
+  <h2>Preparar Proteína</h2>
+  <p><span class="pill info">Novo em 0.0.2</span> Pré-processamento de PDB antes da conversão para PDBQT.</p>
+
+  <h3>Controles</h3>
+  <ul>
+    <li><strong>Carregar PDB...</strong> — <code>QFileDialog.getOpenFileName</code>, popula cadeias detectadas.</li>
+    <li><strong>Remover HETATM</strong> — exclui ligantes/águas/cofatores; campo "Manter resíduos" (vírgula) preserva ex. HEM, MG, ZN.</li>
+    <li><strong>Cadeia</strong> — combo populado por parsing da coluna 22 do PDB.</li>
+    <li><strong>Adicionar hidrogênios</strong> — chama <code>obabel -h</code>; para protonação dependente de pKa use H++ ou Reduce externamente.</li>
+    <li><strong>Preparar e salvar</strong> — escreve PDB filtrado e emite <code>receptor_prepared</code>.</li>
+  </ul>
+
+  <h3>Encadeamento</h3>
+<pre><code>PrepareProteinTab.receptor_prepared(filepath)
+  └─ MainWindow._use_prepared_receptor()
+       ├─ converter_tab.input_paths = [filepath]
+       ├─ converter_tab.type_combo.setCurrentIndex(1)  # Receptor
+       └─ tabs.setCurrentWidget(converter_tab)</code></pre>
+</section>
+
+<section id="converter">
+  <h2>Conversor</h2>
+  <p>Aceita <code>*.pdbqt *.mol2 *.sdf *.mol *.pdb</code>. Detecta formato e mostra na console de log.</p>
+
+  <h3>Pipeline ligante</h3>
+  <div class="mermaid">
+flowchart LR
+    A[Arquivo de entrada] --> B{_detect_format}
+    B -- pdbqt --> X[Copia direto]
+    B -- mol2 --> C[Chem.MolFromMol2File]
+    C -- None --> D[_mol2_fallback_via_molblock]
+    C --> E[Sanitize + Kekulize]
+    D --> E
+    B -- pdb --> F[Chem.MolFromPDBFile]
+    F --> E
+    B -- sdf --> G[SDMolSupplier]
+    G --> E
+    E --> H[AddHs + ETKDGv3 se sem 3D]
+    H --> I[ComputeGasteigerCharges]
+    I --> J[Meeko.prepare PDBQT]
+    J --> K[validate_ligand_pdbqt]
+  </div>
+
+  <h3>Pipeline receptor</h3>
+  <ul>
+    <li><strong>PDB</strong> → <code>mk_prepare_receptor.py</code> → fallback <code>obabel -xr</code>.</li>
+    <li><strong>MOL2</strong> → <code>obabel mol2→pdb</code> intermediário → mesmo pipeline acima.</li>
+    <li><strong>PDBQT</strong> → cópia direta após detecção.</li>
+  </ul>
+</section>
+
+<section id="docking">
+  <h2>Setup + Docking</h2>
+
+  <h3>SetupTab (etapas 1-2)</h3>
+  <table>
+    <tr><th>Campo</th><th>Tipo</th><th>Observação</th></tr>
+    <tr><td>Receptor (PDBQT)</td><td>arquivo</td><td>Obrigatório</td></tr>
+    <tr><td>Usar receptor totalmente rígido</td><td>checkbox</td><td>Oculta campo de flex sidechains</td></tr>
+    <tr><td>Receptor rígido (PDBQT)</td><td>arquivo</td><td>Apenas com flex; contém resíduos NÃO flexíveis</td></tr>
+    <tr><td>Cadeias laterais flexíveis</td><td>arquivo</td><td>PDBQT com árvore ROOT/ENDROOT/BRANCH gerada por meeko</td></tr>
+    <tr><td>Modo</td><td>radio</td><td>Ligante único | Modo Triagem (pasta)</td></tr>
+  </table>
+
+  <h3>DockingTab (etapas 3-7)</h3>
+  <details>
+    <summary>3. Função de Pontuação — seleção múltipla</summary>
+    <p>Cada função selecionada gera execução de validação separada. Ranking baseado em literatura 2021-2025 (vide <a href="#scoring" onclick="event.preventDefault(); document.querySelector('a[data-target=scoring]').click();">Funções de pontuação</a>).</p>
+  </details>
+  <details>
+    <summary>4. Caixa de busca — center + size</summary>
+    <ul>
+      <li><strong>X/Y/Z center</strong> — spinboxes -9999..9999 Å, passo 0.5</li>
+      <li><strong>X/Y/Z size</strong> — 1..126 Å (limite Vina)</li>
+      <li><strong>Predefinição de tamanho</strong> — Pequena/Média/Grande cubo</li>
+      <li><strong>Ajustar tamanho pelo ligante</strong> — cubo = max(extensão) + 1 Å</li>
+      <li><strong>Modo blind docking (Rg)</strong> — caixa = 2·Rg + 2 Å centralizada no centroide</li>
+      <li><strong>Centro no átomo selecionado</strong> — árvore de resíduos/átomos do receptor</li>
+      <li><strong>Centro no ligante de referência (co-cristal)</strong></li>
+      <li><strong>Salvar / Carregar predefinição...</strong> — JSON com center+size</li>
+    </ul>
+  </details>
+  <details>
+    <summary>5. Parâmetros do AutoDock Vina</summary>
+    <ul>
+      <li><code>exhaustiveness</code> 1-512 (padrão 8)</li>
+      <li><code>num_modes</code> 1-20 (padrão 9)</li>
+      <li><code>energy_range</code> 1-10 kcal/mol</li>
+      <li><code>cpu</code> 0=auto</li>
+      <li><code>seed</code> + checkbox "Fixar semente"</li>
+      <li><code>min_rmsd</code> separação mínima entre poses</li>
+    </ul>
+  </details>
+  <details>
+    <summary>6. Diretório de saída</summary>
+    <p>Pasta onde Vina escreve <code>*_out.pdbqt</code>, logs, tabelas e <code>validation_redocking/</code>.</p>
+  </details>
+  <details>
+    <summary>7. Checklist pré-execução</summary>
+    <p>Status colorido por linha: receptor OK, ligante OK, sobreposição ligante/caixa, OpenBabel, função de pontuação disponível, executável Vina.</p>
+  </details>
+</section>
+
+<section id="results">
+  <h2>Resultados</h2>
+  <p>Painel lateral fixo, sempre visível.</p>
+
+  <h3>Sub-tabs</h3>
+  <div class="grid">
+    <div class="card">
+      <h4>Tabela de resultados</h4>
+      <p>Ligante, rank, afinidade, RMSD, scoring usado, pose pinada, notas livres. Filtros por afinidade/RMSD/scoring/nome.</p>
+    </div>
+    <div class="card">
+      <h4>Interações</h4>
+      <p>Pose selecionada → resíduos receptores, doador/aceptor, distância, ângulo, frequência top-10.</p>
+    </div>
+    <div class="card">
+      <h4>Consenso</h4>
+      <p>Disponível ≥2 funções: mean rank, Borda count, Z-score consenso, DP, bandeira de divergência.</p>
+    </div>
+    <div class="card">
+      <h4>Consensus Plot</h4>
+      <p><span class="pill info">Novo</span> Scatter 2D/3D entre scoring functions. X/Y/Z selecionáveis. Hover via <code>mplcursors</code>.</p>
+    </div>
+    <div class="card">
+      <h4>Clusters</h4>
+      <p>RMSD cutoff slider 0.5-5 Å. Tabela cluster id/tamanho/melhor score/representante. Histograma.</p>
+    </div>
+  </div>
+
+  <h3>Exportações</h3>
+  <ul>
+    <li><strong>Excel</strong> — cabeçalho formatado, gradiente por afinidade.</li>
+    <li><strong>CSV</strong> — full dataset.</li>
+    <li><strong>Subset filtrado</strong> — apenas linhas visíveis após filtros.</li>
+    <li><strong>Complexo receptor+pose</strong> — PDB combinado para visualização externa.</li>
+    <li><strong>Melhor por cluster</strong> — representativos.</li>
+  </ul>
+</section>
+
+<section id="install">
+  <h2>Instalação</h2>
+
+  <h3>Windows (binário instalado)</h3>
+  <ol>
+    <li>Baixar release v0.0.2 do GitHub.</li>
+    <li>Executar <code>Instalar_VinaLab.bat</code>.</li>
+    <li>Atalho no menu Iniciar. Sem bootstrap de venv.</li>
+  </ol>
+
+  <h3>Desenvolvimento (todos OS)</h3>
+<pre><code>git clone &lt;repo&gt; vinalab
+cd vinalab/vinagui
+python -m venv .venv
+.venv\Scripts\activate          # Windows
+# source .venv/bin/activate     # macOS/Linux
+pip install -r requirements.txt
+python main.py</code></pre>
+
+  <div class="callout warn">
+    <strong>Dependências opcionais.</strong> RTMScore e DeltaVinaXGB exigem <code>torch</code>, <code>dgl</code>, <code>MDAnalysis</code>, <code>ProDy</code>. GNINA exige binário externo em <code>tools/gnina/</code> ou no PATH.
+  </div>
+
+  <h3>Build nativo</h3>
+  <p>GitHub Actions dispara em tag <code>v*</code>: gera artefatos Windows/macOS/Linux + GitHub Release automaticamente via PyInstaller.</p>
+</section>
+
+<section id="workflow">
+  <h2>Workflow guiado</h2>
+
+  <div class="step">
+    <div class="num">1</div>
+    <div class="body">
+      <h4>Preparar a proteína</h4>
+      <p>Tab <strong>Preparar Proteína</strong> → Carregar PDB → marcar "Remover HETATM" (mantenha cofatores via lista de resíduos) → selecionar cadeia se houver múltiplas → opcionalmente "Adicionar hidrogênios" → <strong>Preparar e salvar</strong>. Resultado é encaminhado ao Conversor automaticamente.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">2</div>
+    <div class="body">
+      <h4>Converter para PDBQT</h4>
+      <p>Tab <strong>Conversor</strong> → arquivo já pré-preenchido (Receptor selecionado) → confirma saída → <strong>Converter para PDBQT</strong>. Repita para ligante(s) escolhendo "Ligante" no combo. Use <strong>Usar como receptor/ligante no Setup</strong> para enviar diretamente.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">3</div>
+    <div class="body">
+      <h4>Configurar Setup</h4>
+      <p>Tab <strong>Docking</strong> → painel <em>1. Configuração do receptor</em>: confirme arquivo. Se for usar receptor rígido total, marque "Usar receptor totalmente rígido". Em <em>2. Configuração de ligantes</em> escolha "Ligante único" ou "Modo Triagem (pasta)".</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">4</div>
+    <div class="body">
+      <h4>Definir scoring + caixa</h4>
+      <p>Em <em>3. Função de Pontuação</em> marque uma ou mais funções. Em <em>4. Caixa de busca</em> use: (a) <strong>Centro no ligante de referência</strong> para co-cristais, (b) <strong>Modo blind docking (Rg)</strong> sem informação prévia, ou (c) coordenadas manuais. Ajuste tamanho via predefinição Média/Grande ou "Ajustar TAMANHO pelo ligante".</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">5</div>
+    <div class="body">
+      <h4>Parâmetros e execução</h4>
+      <p>Em <em>5. Parâmetros</em> ajuste <code>exhaustiveness</code> (mais alto = mais tempo, mais amostragem). Em <em>6. Diretório de saída</em> escolha pasta. Confira <em>7. Checklist pré-execução</em>: todos OK? Clique <strong>Executar docking</strong>.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">6</div>
+    <div class="body">
+      <h4>Analisar resultados</h4>
+      <p>Painel lateral popula em tempo real. Filtre por afinidade/RMSD. Use sub-tab <strong>Consensus Plot</strong> para comparar funções 2D/3D. Em <strong>Clusters</strong> ajuste cutoff RMSD. Em <strong>Interações</strong> selecione pose para ver resíduos do bolsão.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">7</div>
+    <div class="body">
+      <h4>Validar e exportar</h4>
+      <p>Menu <strong>Análise → Validar protocolo</strong>: redocking contra pose cristalográfica de referência, top-N de sucesso. Tab <strong>Relatório</strong> → <strong>Gerar PDF</strong>. Tabela → <strong>Excel</strong> com formatação. Complexo → exportar PDB combinado.</p>
+    </div>
+  </div>
+</section>
+
+<section id="scoring">
+  <h2>Funções de pontuação</h2>
+  <table>
+    <tr><th>Função</th><th>Tipo</th><th>Ranking</th><th>Quando usar</th></tr>
+    <tr><td>RTMScore</td><td>Graph Transformer (ML)</td><td>★★★★</td><td>Triagem virtual de alta qualidade; CASF-2016 forte. Requer torch+dgl+MDAnalysis.</td></tr>
+    <tr><td>GNINA (CNN)</td><td>Deep learning (CNN)</td><td>★★★★</td><td>Melhor pose + score. Requer binário GNINA externo (Linux/WSL).</td></tr>
+    <tr><td>DeltaVinaXGB-Light</td><td>XGBoost + Vina</td><td>★★★☆</td><td>Validação cruzada em benchmarks.</td></tr>
+    <tr><td>Vinardo</td><td>Empírico</td><td>★★★☆</td><td>Default recomendado quando ML indisponível.</td></tr>
+    <tr><td>Vina</td><td>Empírico clássico</td><td>★★☆☆</td><td>Baseline rápido, amplamente validado.</td></tr>
+    <tr><td>AutoDock4 (ad4)</td><td>Força clássica</td><td>★★☆☆</td><td>Metaloproteínas, requer affinity maps.</td></tr>
+    <tr><td>DeltaVinaRF20</td><td>Random Forest</td><td>★☆☆☆</td><td>Histórico CASF-2007/2013; requer Python 2/R.</td></tr>
+  </table>
+
+  <div class="callout">
+    <strong>Multi-scoring.</strong> Marcar múltiplas funções gera execução paralela de validação. ResultsTab calcula consenso por Borda Count, Z-score e DP entre ranks.
+  </div>
+
+  <h3>Metalo-complexos (Issue 4)</h3>
+  <p>Vina/Vinardo tratam metais como Lennard-Jones — sem termo de coordenação. AD4 é preferível para metaloproteínas via affinity maps customizados. Para Zn proteases ou heme Fe considere rescoring QM ou MetalDock externo.</p>
+</section>
+
+<section id="troubleshoot">
+  <h2>Solução de problemas</h2>
+
+  <details>
+    <summary>Erro: <code>PDBQT parsing error: Charge "A " is not valid</code></summary>
+    <p>Causado por coluna 9 sem float Gasteiger. Desde v0.0.2 é detectado e reparado automaticamente por <code>repair_pdbqt_charges()</code>. Se o erro persistir, abra o arquivo manualmente e verifique se a saída do conversor terminou. RDKit + Meeko deve estar instalado para a melhor reparação.</p>
+  </details>
+
+  <details>
+    <summary>Vina aborta com "ligand atoms outside box"</summary>
+    <p>O checklist mostra "Coordenadas do ligante não sobrepõem a caixa". Use <strong>Centro no ligante de referência</strong> ou <strong>Modo blind docking</strong> para autocentrar. Aumente size via predefinição Grande ou "Ajustar TAMANHO pelo ligante".</p>
+  </details>
+
+  <details>
+    <summary>RDKit não interpreta MOL2</summary>
+    <p>Desde v0.0.2 há fallback <code>_mol2_fallback_via_molblock</code> que reconstrói V2000 a partir das tabelas <code>@&lt;TRIPOS&gt;ATOM/BOND</code>. Se falhar mesmo assim, converta para SDF/PDB externamente: <code>obabel arquivo.mol2 -O arquivo.sdf</code>.</p>
+  </details>
+
+  <details>
+    <summary>GNINA indisponível</summary>
+    <p>Coloque <code>gnina.exe</code> em <code>tools/gnina/</code> ou no PATH. No Windows é prático rodar GNINA dentro de WSL e expor o binário. Sem GNINA, use RTMScore para qualidade equivalente em CPU.</p>
+  </details>
+
+  <details>
+    <summary>Dependências opcionais ausentes (RTMScore/DXGB)</summary>
+    <p><code>pip install torch dgl MDAnalysis ProDy torch-scatter</code>. Linha do checklist fica amarela e a função permanece desabilitada se faltar qualquer uma.</p>
+  </details>
+
+  <details>
+    <summary>Open Babel não encontrado</summary>
+    <p>Win: <code>pip install openbabel-wheel</code> instala <code>obabel.exe</code> dentro do Scripts. Para protonação em Preparar Proteína é obrigatório.</p>
+  </details>
+
+  <details>
+    <summary>Caixa de busca ultrapassa 126 Å</summary>
+    <p>Limite hard do Vina 1.2.x. Spinboxes truncam automaticamente. Para targets grandes, faça blind docking em duas etapas ou divida em sub-grades.</p>
+  </details>
+</section>
+
+<section id="changelog">
+  <h2>Changelog v0.0.2</h2>
+
+  <h3>UI/UX</h3>
+  <ul>
+    <li>Scrollbars vertical+horizontal em todos os panels (AsNeeded).</li>
+    <li>Numeração de etapas 1-7 nos group titles.</li>
+    <li>Conversor (opcional) movido para antes do Docking.</li>
+    <li>"Modo Lote" renomeado para "Modo Triagem".</li>
+    <li><strong>Carregar predefinição...</strong> agora abre <code>QFileDialog</code> nativo (era combo).</li>
+    <li>Scrollbar na árvore de resíduos/átomos.</li>
+    <li>Max poses: 20.</li>
+  </ul>
+
+  <h3>Novas features</h3>
+  <ul>
+    <li>Tab <strong>Preparar Proteína</strong> com strip HETATM + chain filter + protonação OBabel.</li>
+    <li>Botão <strong>Modo blind docking (Rg)</strong>: 2·Rg + 2 Å.</li>
+    <li>Conversor MOL2 receptor (via PDB intermediário).</li>
+    <li>Fallback MOL2 ligante reconstrói V2000.</li>
+    <li>Filtro de arquivos expandido (pdbqt/mol2/sdf/mol/pdb) com formato detectado no log.</li>
+    <li>Sub-tab <strong>Consensus Plot</strong> 2D/3D com mplcursors.</li>
+    <li>Checkbox "Usar receptor totalmente rígido".</li>
+    <li>Tooltips explicativos para receptor rígido e cadeias flexíveis.</li>
+  </ul>
+
+  <h3>Bug fixes críticos</h3>
+  <ul>
+    <li>Issue 21 — <code>validate_pdbqt_charges</code> + <code>repair_pdbqt_charges</code> (RDKit → OBabel → 0.000).</li>
+    <li>Caixa via ligante usa cubo (max extensão + 1 Å), não per-axis.</li>
+    <li>Centro do ligante de referência preservou nome técnico.</li>
+  </ul>
+
+  <h3>Esclarecimentos in-code</h3>
+  <ul>
+    <li>Suporte a metalo-complexos documentado em <code>docking_engine.py</code>.</li>
+    <li>Pressuposto de co-cristal documentado no snap de ligante de referência.</li>
+  </ul>
+</section>
+
+<section id="faq">
+  <h2>FAQ</h2>
+
+  <details>
+    <summary>Qual a diferença entre Vina e Vinardo?</summary>
+    <p>Vinardo é re-parametrização da função de pontuação Vina (Quiroga &amp; Villarreal, PLoS ONE 2016). Supera Vina em todos os benchmarks CASF. Mesma velocidade.</p>
+  </details>
+
+  <details>
+    <summary>Posso rodar múltiplos ligantes em paralelo?</summary>
+    <p>Não. <code>DockingWorker</code> processa sequencialmente para evitar contenção de I/O e respeitar <code>cpu</code>. Múltiplas funções de pontuação dentro do mesmo ligante rodam em sequência também — o paralelismo é interno do Vina via <code>--cpu</code>.</p>
+  </details>
+
+  <details>
+    <summary>Como salvo um projeto?</summary>
+    <p>VinaLab não tem ".projeto". Salve manualmente: PDBQT inputs, <code>vina_config.txt</code> (botão Salvar configuração) e a pasta de saída. Predefinições da caixa via Salvar caixa → JSON em <code>config/box_presets.json</code>.</p>
+  </details>
+
+  <details>
+    <summary>RMSD lb vs ub?</summary>
+    <p>Lower bound (lb): RMSD considerando apenas átomos mais próximos. Upper bound (ub): RMSD com atribuição 1:1 ordenada. Diferenças grandes lb/ub indicam degeneração de simetria interna.</p>
+  </details>
+
+  <details>
+    <summary>Posso usar GROMACS/Schrödinger output?</summary>
+    <p>Sim, desde que seja convertido para PDBQT via Meeko/Open Babel. Use Preparar Proteína para limpar HETATM/águas antes.</p>
+  </details>
+
+  <details>
+    <summary>O que persiste em user_prefs.json?</summary>
+    <p>Idioma escolhido, flag de primeira execução, função(ões) de pontuação selecionadas. Apagar o arquivo restaura defaults.</p>
+  </details>
+</section>
+
+</main>
+
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "dark",
+    themeVariables: {
+      background: "#161b22",
+      primaryColor: "#1f2630",
+      lineColor: "#6aa9ff",
+      primaryTextColor: "#e6edf3",
+      primaryBorderColor: "#2a313c"
+    }
+  });
+  window.__mermaid = mermaid;
+  mermaid.run({ querySelector: ".mermaid" });
+</script>
+<script>
+  const links = document.querySelectorAll("nav a[data-target]");
+  const sections = document.querySelectorAll("main section");
+  function activate(id) {
+    sections.forEach(section => section.classList.toggle("active", section.id === id));
+    links.forEach(link => link.classList.toggle("active", link.dataset.target === id));
+    history.replaceState(null, "", "#" + id);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    if (window.__mermaid) {
+      const pending = document.querySelectorAll("section.active .mermaid:not([data-processed='true'])");
+      if (pending.length) window.__mermaid.run({ nodes: pending });
+    }
+  }
+  links.forEach(link => link.addEventListener("click", event => {
+    event.preventDefault();
+    activate(link.dataset.target);
+  }));
+  const initial = (location.hash || "#overview").slice(1);
+  if (document.getElementById(initial)) activate(initial);
+</script>
+</body>
+</html>

@@ -13,6 +13,7 @@ from core.environment_manager import EnvironmentManager
 from core.i18n import I18n
 from core.responsive import ResponsiveManager
 from tabs.docking_tab import DockingTab
+from tabs.prepare_protein_tab import PrepareProteinTab
 from tabs.report_tab import ReportTab
 from tabs.results_tab import ResultsTab
 from tabs.setup_tab import SetupTab
@@ -39,6 +40,7 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.setup_tab = SetupTab()
         self.converter_tab = ConverterWidget()
+        self.prepare_protein_tab = PrepareProteinTab()
         self.results_tab = ResultsTab()
         self.report_tab = ReportTab()
         self.docking_tab = DockingTab(
@@ -55,8 +57,9 @@ class MainWindow(QMainWindow):
         self.docking_workspace.setStretchFactor(1, 2)
         self.docking_workspace.setChildrenCollapsible(False)
 
-        self.tabs.addTab(self.docking_workspace, "")
         self.tabs.addTab(self.converter_tab, "")
+        self.tabs.addTab(self.prepare_protein_tab, "")
+        self.tabs.addTab(self.docking_workspace, "")
         self.tabs.addTab(self.report_tab, "")
         self.tabs.setMinimumWidth(340)
         self.tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -79,6 +82,7 @@ class MainWindow(QMainWindow):
         self.results_tab.results_changed.connect(self.report_tab.set_results)
         self.results_tab.chart_updated.connect(self.report_tab.set_chart_path)
         self.converter_tab.conversion_ready.connect(self._use_converted_file)
+        self.prepare_protein_tab.receptor_prepared.connect(self._use_prepared_receptor)
         self.setup_tab.selection_changed.connect(self._push_receptor_to_viewer)
         self.tabs.currentChanged.connect(self._active_tab_changed)
         self._build_status_bar()
@@ -134,11 +138,13 @@ class MainWindow(QMainWindow):
         self.lang = lang
         I18n.save_lang(self.lang, str(self.prefs_path))
         self.setWindowTitle(I18n.get("window_title", self.lang))
-        self.tabs.setTabText(0, I18n.get("tab_docking", self.lang))
-        self.tabs.setTabText(1, I18n.get("tab_converter", self.lang))
-        self.tabs.setTabText(2, I18n.get("tab_report", self.lang))
+        self.tabs.setTabText(0, I18n.get("tab_converter", self.lang))
+        self.tabs.setTabText(1, I18n.get("tab_prepare_protein", self.lang))
+        self.tabs.setTabText(2, I18n.get("tab_docking", self.lang))
+        self.tabs.setTabText(3, I18n.get("tab_report", self.lang))
         self.setup_tab.retranslate_ui(self.lang)
         self.converter_tab.retranslate_ui(self.lang)
+        self.prepare_protein_tab.retranslate_ui(self.lang)
         self.docking_tab.retranslate_ui(self.lang)
         self.results_tab.retranslate_ui(self.lang)
         self.report_tab.retranslate_ui(self.lang)
@@ -242,7 +248,7 @@ class MainWindow(QMainWindow):
 
     def _active_tab_changed(self, index: int) -> None:
         """Update help panel context when the active tab changes."""
-        keys = ["tab_docking", "tab_converter", "tab_report"]
+        keys = ["tab_converter", "tab_prepare_protein", "tab_docking", "tab_report"]
         if 0 <= index < len(keys):
             self.help_panel.set_context(keys[index], self.lang)
 
@@ -259,6 +265,22 @@ class MainWindow(QMainWindow):
         else:
             self.setup_tab.set_ligand_file(filepath)
         self.tabs.setCurrentWidget(self.docking_workspace)
+
+    def _use_prepared_receptor(self, filepath: str) -> None:
+        """Forward a prepared PDB from Prepare Protein tab to the Converter for PDBQT generation.
+
+        The prepared PDB still needs to be converted to PDBQT before docking. We
+        pre-fill the converter input and switch to the converter tab so the user
+        can review, choose 'Receptor (proteína)', and run conversion.
+        """
+        self.converter_tab.input_paths = [Path(filepath)]
+        self.converter_tab.input_edit.setText(str(Path(filepath)))
+        self.converter_tab.type_combo.setCurrentIndex(1)
+        self.converter_tab._suggest_output()
+        self.tabs.setCurrentWidget(self.converter_tab)
+        self.statusBar().showMessage(
+            f"PDB preparado pronto para conversão: {Path(filepath).name}", 5000
+        )
 
     def _show_welcome_if_needed(self) -> None:
         """Show the first-run welcome dialog after the window initializes."""

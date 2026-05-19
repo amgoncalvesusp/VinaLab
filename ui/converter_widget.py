@@ -70,9 +70,11 @@ class ConversionWorker(QThread):
         if detected == "unknown":
             return ConversionResult(False, output_path, "", "Formato de arquivo não reconhecido.")
         if self.molecule_type == "receptor":
-            if detected != "pdb":
-                return ConversionResult(False, output_path, "", "A conversão de receptor aceita entrada PDB ou PDBQT.")
-            return FileConverter.convert_pdb_to_pdbqt_receptor(input_path, output_path)
+            if detected == "pdb":
+                return FileConverter.convert_pdb_to_pdbqt_receptor(input_path, output_path)
+            if detected == "mol2":
+                return FileConverter.convert_mol2_to_pdbqt_receptor(input_path, output_path)
+            return ConversionResult(False, output_path, "", "A conversão de receptor aceita entrada PDB, MOL2 ou PDBQT.")
         if detected == "pdb":
             return FileConverter.convert_pdb_to_pdbqt_ligand(input_path, output_path)
         if detected == "mol2":
@@ -212,12 +214,14 @@ class ConverterWidget(QWidget):
         self.use_button.clicked.connect(self._emit_current_result)
 
     def _pick_input(self) -> None:
-        """Pick one or more molecular input files."""
+        """Pick one or more molecular input files; show detected formats."""
         file_names, _ = QFileDialog.getOpenFileNames(
             self,
             I18n.get("select_input_files", self.lang),
             "",
-            "Estruturas moleculares (*.pdb *.mol2 *.pdbqt);;PDB (*.pdb);;MOL2 (*.mol2);;PDBQT (*.pdbqt)",
+            "Estruturas moleculares (*.pdbqt *.mol2 *.sdf *.mol *.pdb);;"
+            "PDBQT (*.pdbqt);;MOL2 (*.mol2);;SDF (*.sdf);;MOL (*.mol);;PDB (*.pdb);;"
+            "Todos os arquivos (*)",
         )
         if file_names:
             self.input_paths = [Path(file_name) for file_name in file_names]
@@ -225,6 +229,11 @@ class ConverterWidget(QWidget):
             self._suggest_output()
             self.last_results = []
             self.use_button.hide()
+            detected = ", ".join(
+                f"{path.name} → {FileConverter._detect_format(path).upper()}"
+                for path in self.input_paths
+            )
+            self.log_console.append(f"Formato(s) detectado(s): {detected}")
 
     def _pick_output(self) -> None:
         """Pick an output PDBQT file or output folder."""

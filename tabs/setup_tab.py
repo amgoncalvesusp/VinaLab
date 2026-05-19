@@ -5,6 +5,7 @@ from pathlib import Path
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QCheckBox,
     QFileDialog,
     QFormLayout,
     QGroupBox,
@@ -34,6 +35,7 @@ class SetupTab(QWidget):
         self.receptor_edit = QLineEdit()
         self.rigid_receptor_edit = QLineEdit()
         self.flex_receptor_edit = QLineEdit()
+        self.fully_rigid_checkbox = QCheckBox()
         self.single_ligand_edit = QLineEdit()
         self.batch_folder_edit = QLineEdit()
         self.warning_label = QLabel()
@@ -136,6 +138,16 @@ class SetupTab(QWidget):
         self.ligand_group.setTitle(I18n.get("ligand_group", lang))
         self.single_radio.setText(I18n.get("single_ligand", lang))
         self.batch_radio.setText(I18n.get("batch_mode", lang))
+        self.batch_radio.setToolTip(
+            "AutoDock Vina aceita apenas um ligante por arquivo PDBQT. "
+            "No Modo Triagem, selecione uma pasta contendo arquivos .pdbqt (um por ligante); "
+            "cada arquivo será processado em sequência."
+            if lang == "pt"
+            else "AutoDock Vina accepts only one ligand per PDBQT file. "
+            "In Screening mode, select a folder containing .pdbqt files (one per ligand); "
+            "each file is processed sequentially."
+        )
+        self.batch_folder_edit.setToolTip(self.batch_radio.toolTip())
         self.single_ligand_label.setText(I18n.get("single_ligand_file", lang))
         self.batch_folder_label.setText(I18n.get("batch_folder", lang))
         for button in self.file_buttons:
@@ -160,6 +172,7 @@ class SetupTab(QWidget):
         """Build receptor file picker controls."""
         self.receptor_form = QFormLayout(self.receptor_group)
         self.receptor_form.addRow(self.receptor_file_label, self._file_row(self.receptor_edit, self._pick_receptor))
+        self.receptor_form.addRow(self.fully_rigid_checkbox)
         self.receptor_form.addRow(
             self.rigid_receptor_label,
             self._file_row(self.rigid_receptor_edit, self._pick_rigid_receptor),
@@ -168,7 +181,31 @@ class SetupTab(QWidget):
             self.flex_receptor_label,
             self._file_row(self.flex_receptor_edit, self._pick_flexible_receptor),
         )
+        self.fully_rigid_checkbox.toggled.connect(self._toggle_flex_visibility)
+        rigid_tooltip = (
+            "Ao usar receptor flexível, a parte rígida deve ser fornecida separadamente "
+            "como PDBQT contendo todos os resíduos NÃO flexíveis. "
+            "Se nenhum resíduo flexível for definido, use apenas o receptor principal e "
+            "deixe este campo vazio."
+        )
+        self.rigid_receptor_edit.setToolTip(rigid_tooltip)
+        flex_tooltip = (
+            "PDBQT contendo a árvore de torsões (ROOT/ENDROOT/BRANCH) gerada por meeko ou "
+            "prepare_flexreceptor4.py. Exemplo: flex_residues.pdbqt. "
+            "Formato de seleção de resíduos: CHAIN:RESNAME:RESNUM "
+            "(por exemplo, A:TYR:48,A:PHE:49)."
+        )
+        self.flex_receptor_edit.setToolTip(flex_tooltip)
+        self.flex_receptor_label.setToolTip(flex_tooltip)
         return self.receptor_group
+
+    def _toggle_flex_visibility(self, fully_rigid: bool) -> None:
+        """Hide flexible-sidechain input when 'Usar receptor totalmente rígido' is checked."""
+        self.flex_receptor_edit.setVisible(not fully_rigid)
+        self.flex_receptor_label.setVisible(not fully_rigid)
+        if fully_rigid:
+            self.flex_receptor_edit.clear()
+        self.validate_inputs()
 
     def _build_ligand_group(self) -> QGroupBox:
         """Build ligand mode and file picker controls."""
@@ -256,6 +293,14 @@ class SetupTab(QWidget):
         self.receptor_file_label.setText(I18n.get("receptor_label", self.lang))
         self.rigid_receptor_label.setText(I18n.get("rigid_receptor", self.lang))
         self.flex_receptor_label.setText(I18n.get("flexible_receptor", self.lang))
+        self.fully_rigid_checkbox.setText(
+            "Usar receptor totalmente rígido" if self.lang == "pt" else "Use fully rigid receptor"
+        )
+        self.fully_rigid_checkbox.setToolTip(
+            "Quando marcado, oculta o campo de cadeias laterais flexíveis e usa o receptor inteiro como rígido."
+            if self.lang == "pt"
+            else "When checked, hides the flexible sidechain input and uses the entire receptor as rigid."
+        )
 
     @staticmethod
     def _path_from_edit(edit: QLineEdit) -> Path | None:
