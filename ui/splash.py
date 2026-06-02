@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """PySide6 splash screen branding for VinaLab."""
 
 from PySide6.QtCore import Qt

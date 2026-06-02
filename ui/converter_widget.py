@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """PDB/MOL2/PDBQT conversion panel for VinaLab."""
 
 from pathlib import Path

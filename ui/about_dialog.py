@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """About dialog for VinaLab."""
 
 from PySide6.QtWidgets import QDialog, QLabel, QPushButton, QVBoxLayout

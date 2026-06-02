@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Application entry point for VinaLab."""
 
 from pathlib import Path
@@ -42,7 +43,7 @@ def main() -> int:
                 f"Ausente: {missing_names or 'AutoDock Vina'}"
             )
 
-        from PySide6.QtGui import QIcon
+        from PySide6.QtGui import QFont, QIcon
         from PySide6.QtWidgets import QApplication
 
         from core.responsive import ResponsiveManager
@@ -51,6 +52,7 @@ def main() -> int:
         app = QApplication(sys.argv)
         app.setApplicationName("VinaLab")
         app.setStartDragTime(500)
+        app.setFont(QFont("Segoe UI", 9))
 
         style_path = resource_path("ui/style.qss")
         if style_path.exists():

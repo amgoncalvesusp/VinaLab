@@ -159,60 +159,6 @@ QPushButton#btn_danger:hover {
 }
 
 /* Success badge button (non-interactive) */
-QPushButton#badge_best {
-    background-color: #1a3a2a;
-    color: #2ecc71;
-    border: 1px solid #2ecc71;
-    border-radius: 10px;
-    padding: 3px 10px;
-    font-size: 10px;
-    font-weight: 600;
-    max-height: 22px;
-}
-
-QPushButton#badge_recommended {
-    background-color: #1a2a3a;
-    color: #4f8ef7;
-    border: 1px solid #4f8ef7;
-    border-radius: 10px;
-    padding: 3px 10px;
-    font-size: 10px;
-    font-weight: 600;
-    max-height: 22px;
-}
-
-QPushButton#badge_default {
-    background-color: #252830;
-    color: #8892a4;
-    border: 1px solid #3d4356;
-    border-radius: 10px;
-    padding: 3px 10px;
-    font-size: 10px;
-    font-weight: 600;
-    max-height: 22px;
-}
-
-QPushButton#badge_specialized {
-    background-color: #2a1a3a;
-    color: #9b59b6;
-    border: 1px solid #9b59b6;
-    border-radius: 10px;
-    padding: 3px 10px;
-    font-size: 10px;
-    font-weight: 600;
-    max-height: 22px;
-}
-
-QPushButton#badge_unavailable {
-    background-color: #1e1a1a;
-    color: #3d4356;
-    border: 1px solid #2e2530;
-    border-radius: 10px;
-    padding: 3px 10px;
-    font-size: 10px;
-    max-height: 22px;
-}
-
 QPushButton#btn_reference {
     background-color: transparent;
     color: #4f8ef7;
@@ -622,6 +568,7 @@ QLabel#label_field {
     color: #c0c8d8;
     font-size: 11px;
     font-weight: 400;
+    min-width: 300px;
 }
 
 QLabel#label_value {
@@ -862,36 +809,6 @@ QPushButton#btn_toolbar,
 QPushButton#lang_btn_inactive {
     background-color: #FFFFFF;
     color: #3A3A5C;
-    border: 1px solid #D0C8B8;
-}
-
-QPushButton#badge_best {
-    background-color: #EAF5E8;
-    color: #216B38;
-    border: 1px solid #8BBE78;
-}
-
-QPushButton#badge_recommended {
-    background-color: #FFF7E6;
-    color: #8A5A00;
-    border: 1px solid #C8922A;
-}
-
-QPushButton#badge_default {
-    background-color: #F2EEE7;
-    color: #3A3A5C;
-    border: 1px solid #D0C8B8;
-}
-
-QPushButton#badge_specialized {
-    background-color: #EEF2FA;
-    color: #3A3A5C;
-    border: 1px solid #AEB8D3;
-}
-
-QPushButton#badge_unavailable {
-    background-color: #F1E5E1;
-    color: #8B8578;
     border: 1px solid #D0C8B8;
 }
 

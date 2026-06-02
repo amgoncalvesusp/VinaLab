@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Runtime language switcher widget."""
 
 from PySide6.QtCore import Signal

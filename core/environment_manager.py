@@ -1,7 +1,9 @@
+# -*- coding: utf-8 -*-
 """Self-installing environment management for VinaLab."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 import importlib.metadata
 import json
@@ -10,6 +12,8 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+
+ProgressCallback = Callable[[str, int, str], None]
 
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0
 
@@ -20,8 +24,24 @@ class EnvironmentManager:
     _FULL_STATUS_CACHE: dict[str, dict] = {}
     _SCORING_STATUS_CACHE: dict[str, dict] = {}
 
+    @classmethod
+    def clear_caches(cls) -> None:
+        """Drop cached status reports so the next query re-probes the environment.
+
+        Must be called after installing or removing packages at runtime; otherwise
+        the GUI keeps reporting freshly installed scorers/runtimes as unavailable
+        until the process restarts.
+        """
+        cls._FULL_STATUS_CACHE.clear()
+        cls._SCORING_STATUS_CACHE.clear()
+
     CORE_PACKAGES = [
-        {"import_name": "PySide6.QtWidgets", "pip_name": "PySide6", "version": ">=6.7,<6.8", "description": "GUI framework"},
+        {
+            "import_name": "PySide6.QtWidgets",
+            "pip_name": "PySide6",
+            "version": ">=6.7,<6.8",
+            "description": "GUI framework",
+        },
         {
             "import_name": "PySide6.QtWebEngineWidgets",
             "pip_name": "PySide6-Addons",
@@ -29,20 +49,86 @@ class EnvironmentManager:
             "description": "Embedded molecular visualization browser",
             "version_optional": True,
         },
-        {"import_name": "vina", "pip_name": "vina", "version": ">=1.2", "description": "AutoDock Vina engine", "fallback": "vina_cli"},
-        {"import_name": "meeko", "pip_name": "meeko", "version": ">=0.4", "description": "PDBQT preparation"},
-        {"import_name": "scipy", "pip_name": "scipy", "version": ">=1.10", "description": "Scientific routines required by meeko"},
-        {"import_name": "gemmi", "pip_name": "gemmi", "version": ">=0.6", "description": "Macromolecular structure support required by meeko"},
-        {"import_name": "rdkit", "pip_name": "rdkit", "version": ">=2023.3", "description": "Molecular structure handling"},
+        {
+            "import_name": "vina",
+            "pip_name": "vina",
+            "version": ">=1.2",
+            "description": "AutoDock Vina engine",
+            "fallback": "vina_cli",
+        },
+        {
+            "import_name": "meeko",
+            "pip_name": "meeko",
+            "version": ">=0.4",
+            "description": "PDBQT preparation",
+        },
+        {
+            "import_name": "scipy",
+            "pip_name": "scipy",
+            "version": ">=1.10",
+            "description": "Scientific routines required by meeko",
+        },
+        {
+            "import_name": "gemmi",
+            "pip_name": "gemmi",
+            "version": ">=0.6",
+            "description": "Macromolecular structure support required by meeko",
+        },
+        {
+            "import_name": "rdkit",
+            "pip_name": "rdkit",
+            "version": ">=2023.3",
+            "description": "Molecular structure handling",
+        },
         # openbabel-wheel provides both CLI obabel and Python bindings on Windows without requiring a separate installation.
-        {"import_name": "openbabel", "pip_name": "openbabel-wheel", "version": ">=3.1", "description": "Format conversion fallback"},
-        {"import_name": "pandas", "pip_name": "pandas", "version": ">=1.5", "description": "Results management"},
-        {"import_name": "matplotlib", "pip_name": "matplotlib", "version": ">=3.6", "description": "Score charts"},
-        {"import_name": "openpyxl", "pip_name": "openpyxl", "version": ">=3.0", "description": "Excel export"},
-        {"import_name": "reportlab", "pip_name": "reportlab", "version": ">=3.6", "description": "PDF reports"},
-        {"import_name": "numpy", "pip_name": "numpy", "version": ">=1.23,<2", "description": "Numerical support"},
-        {"import_name": "py3Dmol", "pip_name": "py3Dmol", "version": ">=2.0", "description": "3Dmol molecular viewer bridge"},
-        {"import_name": "wheel", "pip_name": "wheel", "version": ">=0.40", "description": "Python wheel build support"},
+        {
+            "import_name": "openbabel",
+            "pip_name": "openbabel-wheel",
+            "version": ">=3.1",
+            "description": "Format conversion fallback",
+        },
+        {
+            "import_name": "pandas",
+            "pip_name": "pandas",
+            "version": ">=1.5",
+            "description": "Results management",
+        },
+        {
+            "import_name": "matplotlib",
+            "pip_name": "matplotlib",
+            "version": ">=3.6",
+            "description": "Score charts",
+        },
+        {
+            "import_name": "openpyxl",
+            "pip_name": "openpyxl",
+            "version": ">=3.0",
+            "description": "Excel export",
+        },
+        {
+            "import_name": "reportlab",
+            "pip_name": "reportlab",
+            "version": ">=3.6",
+            "description": "PDF reports",
+        },
+        {
+            "import_name": "numpy",
+            "pip_name": "numpy",
+            "version": ">=1.23,<2",
+            "description": "Numerical support",
+        },
+        {
+            "import_name": "py3Dmol",
+            "pip_name": "py3Dmol",
+            "version": ">=2.0",
+            "description": "3Dmol molecular viewer bridge",
+        },
+        {
+            "import_name": "wheel",
+            "pip_name": "wheel",
+            "version": ">=0.40",
+            "description": "Python wheel build support",
+        },
     ]
     OPTIONAL_SCORING_PACKAGES = [
         {
@@ -143,7 +229,17 @@ class EnvironmentManager:
         "rtmscore": {
             "label": "RTMScore",
             "archive": "RTMScore-main.zip",
-            "imports": ["torch", "torchdata", "yaml", "pydantic", "dgl", "dgllife", "MDAnalysis", "prody", "torch_scatter"],
+            "imports": [
+                "torch",
+                "torchdata",
+                "yaml",
+                "pydantic",
+                "dgl",
+                "dgllife",
+                "MDAnalysis",
+                "prody",
+                "torch_scatter",
+            ],
         },
         "delta_vina_xgb": {
             "label": "DeltaVinaXGB-Light",
@@ -163,16 +259,24 @@ class EnvironmentManager:
         """Initialize paths for the local virtual environment and logs."""
         self.app_dir = (app_dir or Path(__file__).resolve().parents[1]).resolve()
         self.user_dir = self._user_data_dir()
-        self.venv_path = (self.user_dir if self._is_frozen_bundle() else self.app_dir) / ".venv"
+        self.venv_path = (
+            self.user_dir if self._is_frozen_bundle() else self.app_dir
+        ) / ".venv"
         self.logs_dir = self.user_dir / "logs"
         self.logs_dir.mkdir(parents=True, exist_ok=True)
-        self.install_log_path = self.logs_dir / f"install_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        self.install_log_path = (
+            self.logs_dir / f"install_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        )
         self.error_log_path = self.logs_dir / "install_error.log"
-        self.base_python = None if self._is_frozen_bundle() else self._find_base_python()
+        self.base_python = (
+            None if self._is_frozen_bundle() else self._find_base_python()
+        )
 
     def detect_python_env(self) -> dict:
         """Return detected Python and local virtual environment paths."""
-        scripts_dir = self.venv_path / ("Scripts" if sys.platform.startswith("win") else "bin")
+        scripts_dir = self.venv_path / (
+            "Scripts" if sys.platform.startswith("win") else "bin"
+        )
         python_name = "python.exe" if sys.platform.startswith("win") else "python"
         pip_name = "pip.exe" if sys.platform.startswith("win") else "pip"
         return {
@@ -188,11 +292,15 @@ class EnvironmentManager:
         if self._is_frozen_bundle():
             return True
         env = self.detect_python_env()
-        if env["python_path"].exists() and not self._venv_python_is_valid(env["python_path"]):
+        if env["python_path"].exists() and not self._venv_python_is_valid(
+            env["python_path"]
+        ):
             shutil.rmtree(self.venv_path, ignore_errors=True)
         if not env["python_path"].exists():
             if self.base_python is None:
-                self._write_error_log("Não foi possível localizar um interpretador Python 3.10+ real para criar .venv.")
+                self._write_error_log(
+                    "Não foi possível localizar um interpretador Python 3.10+ real para criar .venv."
+                )
                 return False
             create_result = subprocess.run(
                 [str(self.base_python), "-m", "venv", str(self.venv_path)],
@@ -208,7 +316,16 @@ class EnvironmentManager:
                 self._write_error_log(create_result.stderr or create_result.stdout)
                 return False
         result = subprocess.run(
-            [str(env["python_path"]), "-m", "pip", "install", "--upgrade", "pip", "--no-input", "--disable-pip-version-check"],
+            [
+                str(env["python_path"]),
+                "-m",
+                "pip",
+                "install",
+                "--upgrade",
+                "pip",
+                "--no-input",
+                "--disable-pip-version-check",
+            ],
             cwd=self.app_dir,
             capture_output=True,
             text=True,
@@ -226,7 +343,13 @@ class EnvironmentManager:
         env = self.detect_python_env()
         packages = self.REQUIRED_PACKAGES if include_optional else self.CORE_PACKAGES
         if self._is_frozen_bundle():
-            return [package for package in packages if not self._package_import_ok(env["python_path"], package["import_name"])]
+            return [
+                package
+                for package in packages
+                if not self._package_import_ok(
+                    env["python_path"], package["import_name"]
+                )
+            ]
         if not env["python_path"].exists():
             return list(packages)
 
@@ -234,7 +357,9 @@ class EnvironmentManager:
         for package in packages:
             if package["import_name"] == "vina" and self._vina_cli_path() is not None:
                 continue
-            code = f"import importlib; importlib.import_module({package['import_name']!r})"
+            code = (
+                f"import importlib; importlib.import_module({package['import_name']!r})"
+            )
             result = subprocess.run(
                 [str(env["python_path"]), "-c", code],
                 cwd=self.app_dir,
@@ -247,7 +372,9 @@ class EnvironmentManager:
                 missing.append(package)
         return missing
 
-    def install_package(self, package: dict, progress_callback: callable) -> bool:
+    def install_package(
+        self, package: dict, progress_callback: ProgressCallback
+    ) -> bool:
         """Install one required package into the local venv with streamed progress."""
         env = self.detect_python_env()
         requirement = f"{package['pip_name']}{package['version']}"
@@ -285,12 +412,22 @@ class EnvironmentManager:
                 "https://download.pytorch.org/whl/cpu",
             ]
         elif package["pip_name"] == "torch-scatter":
-            torch_package = next(item for item in self.OPTIONAL_SCORING_PACKAGES if item["pip_name"] == "torch")
+            torch_package = next(
+                item
+                for item in self.OPTIONAL_SCORING_PACKAGES
+                if item["pip_name"] == "torch"
+            )
             if not self._package_import_ok(env["python_path"], "torch"):
                 self.install_package(torch_package, progress_callback)
             if not self._package_import_ok(env["python_path"], "torch"):
-                self._append_install_log("AVISO torch-scatter ignorado porque torch não pôde ser instalado primeiro.\n")
-                progress_callback("torch-scatter", 0, "AVISO torch-scatter ignorado porque torch não pôde ser instalado primeiro.")
+                self._append_install_log(
+                    "AVISO torch-scatter ignorado porque torch não pôde ser instalado primeiro.\n"
+                )
+                progress_callback(
+                    "torch-scatter",
+                    0,
+                    "AVISO torch-scatter ignorado porque torch não pôde ser instalado primeiro.",
+                )
                 return False
             command = [
                 str(env["python_path"]),
@@ -325,8 +462,14 @@ class EnvironmentManager:
         return_code = process.wait()
         if return_code != 0:
             if package["pip_name"] == "vina" and self._vina_cli_path() is not None:
-                self._append_install_log("Wheel Python do vina indisponível; usando fallback Vina CLI incluído.\n")
-                progress_callback("vina", 100, "Wheel Python do vina indisponível; usando fallback Vina CLI incluído.")
+                self._append_install_log(
+                    "Wheel Python do vina indisponível; usando fallback Vina CLI incluído.\n"
+                )
+                progress_callback(
+                    "vina",
+                    100,
+                    "Wheel Python do vina indisponível; usando fallback Vina CLI incluído.",
+                )
                 return True
             if not package.get("required", True):
                 warning = f"AVISO dependência opcional {package['pip_name']} falhou ao instalar; funções de pontuação relacionadas serão desativadas.\n"
@@ -337,7 +480,9 @@ class EnvironmentManager:
             return False
         return True
 
-    def install_all_missing(self, progress_callback: callable, include_optional: bool = False) -> bool:
+    def install_all_missing(
+        self, progress_callback: ProgressCallback, include_optional: bool = False
+    ) -> bool:
         """Install missing core packages sequentially.
 
         Optional scoring runtimes are intentionally not installed during first run because
@@ -351,15 +496,31 @@ class EnvironmentManager:
         total = len(missing)
         for index, package in enumerate(missing, start=1):
             percent = int((index - 1) / total * 100)
-            progress_callback(package["pip_name"], percent, f"Instalando {package['pip_name']}...")
+            progress_callback(
+                package["pip_name"], percent, f"Instalando {package['pip_name']}..."
+            )
             if not self.install_package(package, progress_callback):
                 if not package.get("required", True):
-                    progress_callback(package["pip_name"], percent, f"Dependência opcional {package['pip_name']} indisponível.")
+                    progress_callback(
+                        package["pip_name"],
+                        percent,
+                        f"Dependência opcional {package['pip_name']} indisponível.",
+                    )
                     continue
-                progress_callback(package["pip_name"], percent, f"Falha ao instalar {package['pip_name']}.")
+                progress_callback(
+                    package["pip_name"],
+                    percent,
+                    f"Falha ao instalar {package['pip_name']}.",
+                )
                 return False
-            if package.get("required", True) or self._package_import_ok(self.detect_python_env()["python_path"], package["import_name"]):
-                progress_callback(package["pip_name"], int(index / total * 100), f"{package['pip_name']} instalado.")
+            if package.get("required", True) or self._package_import_ok(
+                self.detect_python_env()["python_path"], package["import_name"]
+            ):
+                progress_callback(
+                    package["pip_name"],
+                    int(index / total * 100),
+                    f"{package['pip_name']} instalado.",
+                )
             else:
                 progress_callback(
                     package["pip_name"],
@@ -384,7 +545,12 @@ class EnvironmentManager:
             except Exception as exc:  # noqa: BLE001 - fallback CLI is acceptable here
                 vina_cli = self._vina_cli_path()
                 if vina_cli is not None:
-                    return {"ok": True, "mode": "cli_fallback", "version": vina_cli.name, "path": str(vina_cli)}
+                    return {
+                        "ok": True,
+                        "mode": "cli_fallback",
+                        "version": vina_cli.name,
+                        "path": str(vina_cli),
+                    }
                 return {"ok": False, "mode": "missing", "error": str(exc)}
         code = (
             "import importlib.metadata\n"
@@ -401,11 +567,24 @@ class EnvironmentManager:
             creationflags=NO_WINDOW,
         )
         if result.returncode == 0:
-            return {"ok": True, "mode": "python", "version": result.stdout.strip() or "unknown"}
+            return {
+                "ok": True,
+                "mode": "python",
+                "version": result.stdout.strip() or "unknown",
+            }
         vina_cli = self._vina_cli_path()
         if vina_cli is not None:
-            return {"ok": True, "mode": "cli_fallback", "version": vina_cli.name, "path": str(vina_cli)}
-        return {"ok": False, "mode": "missing", "error": (result.stderr or result.stdout).strip()}
+            return {
+                "ok": True,
+                "mode": "cli_fallback",
+                "version": vina_cli.name,
+                "path": str(vina_cli),
+            }
+        return {
+            "ok": False,
+            "mode": "missing",
+            "error": (result.stderr or result.stdout).strip(),
+        }
 
     def full_status_report(self) -> dict:
         """Return and persist the current environment readiness report."""
@@ -415,7 +594,11 @@ class EnvironmentManager:
         env = self.detect_python_env()
         packages = self._package_statuses(env["python_path"])
         venv_ready = self._is_frozen_bundle() or env["python_path"].exists()
-        vina_status = self.verify_autodock_vina() if venv_ready else {"ok": False, "error": "venv ausente"}
+        vina_status = (
+            self.verify_autodock_vina()
+            if venv_ready
+            else {"ok": False, "error": "venv ausente"}
+        )
         report = {
             "python_version": ".".join(str(part) for part in sys.version_info[:3]),
             "venv_ready": venv_ready,
@@ -424,11 +607,17 @@ class EnvironmentManager:
             "vina": vina_status,
             "scoring_functions": self.scoring_function_statuses(),
             "all_ready": venv_ready
-            and all(package["installed"] for package in packages if package.get("required", True))
+            and all(
+                package["installed"]
+                for package in packages
+                if package.get("required", True)
+            )
             and bool(vina_status["ok"]),
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
-        (self.logs_dir / "environment_status.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+        (self.logs_dir / "environment_status.json").write_text(
+            json.dumps(report, indent=2), encoding="utf-8"
+        )
         self._FULL_STATUS_CACHE[cache_key] = dict(report)
         return report
 
@@ -449,9 +638,10 @@ class EnvironmentManager:
         self._FULL_STATUS_CACHE[cache_key] = dict(report)
         return report
 
-    def check_and_install(self, progress_callback: callable) -> bool:
+    def check_and_install(self, progress_callback: ProgressCallback) -> bool:
         """Create the venv, install missing packages, verify Vina, and persist status."""
         if self._is_frozen_bundle():
+            self.clear_caches()
             report = self.full_status_report()
             return bool(report["all_ready"])
         env = self.detect_python_env()
@@ -461,11 +651,14 @@ class EnvironmentManager:
         if not env["python_path"].exists() and not self.create_virtualenv():
             return False
         if not self.install_all_missing(progress_callback):
+            self.clear_caches()
             self.full_status_report()
             return False
         status = self.verify_autodock_vina()
         if not status["ok"]:
             self._write_error_log(status.get("error", "Falha na verificação do Vina."))
+        # Packages may have changed on disk; drop stale status before the final probe.
+        self.clear_caches()
         report = self.full_status_report()
         return bool(report["all_ready"])
 
@@ -485,7 +678,9 @@ class EnvironmentManager:
                 if not self._package_import_ok(env["python_path"], import_name)
             ]
             unsupported_reason = config.get("unsupported_reason", "")
-            available = archive_path.exists() and not missing_imports and not unsupported_reason
+            available = (
+                archive_path.exists() and not missing_imports and not unsupported_reason
+            )
             reason = ""
             if not archive_path.exists():
                 reason = f"Archive not found: {config['archive']}"
@@ -516,11 +711,17 @@ class EnvironmentManager:
                     import_ok = True
             if self._is_frozen_bundle() and import_ok and version is None:
                 version = "incluído"
-            installed = import_ok if self._is_frozen_bundle() else version is not None and import_ok
+            installed = (
+                import_ok
+                if self._is_frozen_bundle()
+                else version is not None and import_ok
+            )
             statuses.append(
                 {
                     "name": package["pip_name"],
-                    "installed": installed if not package.get("version_optional") else import_ok,
+                    "installed": installed
+                    if not package.get("version_optional")
+                    else import_ok,
                     "version": version or ("import ok" if import_ok else ""),
                     "description": package["description"],
                     "required": package.get("required", True),
@@ -575,7 +776,11 @@ class EnvironmentManager:
         if not python_path.exists():
             return False
         result = subprocess.run(
-            [str(python_path), "-c", f"import importlib; importlib.import_module({import_name!r})"],
+            [
+                str(python_path),
+                "-c",
+                f"import importlib; importlib.import_module({import_name!r})",
+            ],
             cwd=self.app_dir,
             capture_output=True,
             text=True,
@@ -629,23 +834,36 @@ class EnvironmentManager:
                 continue
             if result.returncode != 0:
                 continue
-            lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+            lines = [
+                line.strip() for line in result.stdout.splitlines() if line.strip()
+            ]
             if not lines:
                 continue
             candidate = Path(lines[0]).resolve()
-            if candidate.exists() and candidate != current_executable and "_MEI" not in str(candidate):
+            if (
+                candidate.exists()
+                and candidate != current_executable
+                and "_MEI" not in str(candidate)
+            ):
                 return candidate
         return None
 
     def _vina_cli_path(self) -> Path | None:
         """Return a bundled AutoDock Vina executable fallback, if available."""
         bundle_dir = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
-        exe_dir = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path.cwd()
+        exe_dir = (
+            Path(sys.executable).resolve().parent
+            if getattr(sys, "frozen", False)
+            else Path.cwd()
+        )
         candidates = [
             self.app_dir / "tools" / "vina" / "vina_1.2.7_win.exe",
             bundle_dir / "tools" / "vina" / "vina_1.2.7_win.exe",
             exe_dir / "tools" / "vina" / "vina_1.2.7_win.exe",
-            Path(__file__).resolve().parents[1] / "tools" / "vina" / "vina_1.2.7_win.exe",
+            Path(__file__).resolve().parents[1]
+            / "tools"
+            / "vina"
+            / "vina_1.2.7_win.exe",
         ]
         for candidate in candidates:
             if candidate.exists() and candidate.is_file():
@@ -661,11 +879,16 @@ class EnvironmentManager:
         if not self._is_frozen_bundle():
             return self.app_dir
         if sys.platform.startswith("win"):
-            root = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local"))
+            root = Path(
+                os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local")
+            )
             return root / "VinaLab"
         if sys.platform == "darwin":
             return Path.home() / "Library" / "Application Support" / "VinaLab"
-        return Path(os.environ.get("XDG_DATA_HOME") or (Path.home() / ".local" / "share")) / "vinalab"
+        return (
+            Path(os.environ.get("XDG_DATA_HOME") or (Path.home() / ".local" / "share"))
+            / "vinalab"
+        )
 
     def _venv_python_is_valid(self, python_path: Path) -> bool:
         """Return True when the venv Python is a real interpreter, not the frozen app."""
@@ -682,4 +905,8 @@ class EnvironmentManager:
         except (OSError, subprocess.TimeoutExpired):
             return False
         output = result.stdout.strip()
-        return result.returncode == 0 and "VinaLab.exe" not in output and "_MEI" not in output
+        return (
+            result.returncode == 0
+            and "VinaLab.exe" not in output
+            and "_MEI" not in output
+        )

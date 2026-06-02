@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.0.4 - 2026-06-02
+
+- Prepara release da nova versao com melhorias acumuladas de interface, docking, conversao, resultados e pontuacao.
+- Adiciona pacotes Windows portatil e instalador para publicacao no GitHub.
+- Atualiza o workflow de release para usar as notas da versao 0.0.4.
+
 ## 0.0.2 - 2026-05-16
 
 - Adiciona GitHub Actions para gerar builds nativos de Windows, macOS e Linux a partir de tags `v*`.

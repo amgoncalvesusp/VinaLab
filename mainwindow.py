@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Main window for the VinaLab desktop application."""
 
 from pathlib import Path
@@ -7,7 +8,16 @@ import sys
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QActionGroup
-from PySide6.QtWidgets import QLabel, QMainWindow, QMessageBox, QPushButton, QSizePolicy, QSplitter, QStatusBar, QTabWidget
+from PySide6.QtWidgets import (
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QSizePolicy,
+    QSplitter,
+    QStatusBar,
+    QTabWidget,
+)
 
 from core.environment_manager import EnvironmentManager
 from core.i18n import I18n
@@ -32,10 +42,14 @@ class MainWindow(QMainWindow):
         """Create the main window and wire tab-level signals."""
         super().__init__()
         self.environment_manager = EnvironmentManager()
-        self.prefs_path = self.environment_manager.user_dir / "config" / "user_prefs.json"
+        self.prefs_path = (
+            self.environment_manager.user_dir / "config" / "user_prefs.json"
+        )
         self.was_first_run = not self.prefs_path.exists()
         self.lang = I18n.load_lang(str(self.prefs_path))
-        self.current_screen_profile = ResponsiveManager.detect_screen_profile(self.screen())
+        self.current_screen_profile = ResponsiveManager.detect_screen_profile(
+            self.screen()
+        )
 
         self.tabs = QTabWidget()
         self.setup_tab = SetupTab()
@@ -76,7 +90,9 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.RightDockWidgetArea, self.help_panel)
         self._build_menu_bar()
         self.docking_tab.docking_launched.connect(self._show_results_tab)
-        self.docking_tab.output_directory_changed.connect(self.report_tab.set_output_directory)
+        self.docking_tab.output_directory_changed.connect(
+            self.report_tab.set_output_directory
+        )
         self.docking_tab.parameters_changed.connect(self.report_tab.set_parameters)
         self.docking_tab.box_changed.connect(self.results_tab.update_box_preview)
         self.results_tab.results_changed.connect(self.report_tab.set_results)
@@ -108,12 +124,21 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(I18n.get("env_checking", self.lang))
             self.fix_button.setVisible(False)
             return
-        missing = next((package["name"] for package in report["packages"] if not package["installed"]), None)
+        missing = next(
+            (
+                package["name"]
+                for package in report["packages"]
+                if not package["installed"]
+            ),
+            None,
+        )
         if report["all_ready"]:
             self.statusBar().showMessage(I18n.get("env_ready", self.lang))
             self.fix_button.setVisible(False)
         elif missing:
-            self.statusBar().showMessage(f"{I18n.get('env_error', self.lang)}: {missing}")
+            self.statusBar().showMessage(
+                f"{I18n.get('env_error', self.lang)}: {missing}"
+            )
             self.fix_button.setVisible(True)
         else:
             self.statusBar().showMessage(I18n.get("env_checking", self.lang))
@@ -122,16 +147,19 @@ class MainWindow(QMainWindow):
     def rerun_bootstrap(self) -> None:
         """Start the bootstrap launcher to repair the environment."""
         if getattr(sys, "frozen", False):
+            self.environment_manager.clear_caches()
             self.environment_manager.full_status_report()
             self.refresh_environment_status()
             QMessageBox.information(
                 self,
-                "Runtime incluído",
-                "Esta instalação do VinaLab já inclui o runtime obrigatório. Dependências opcionais de pontuação podem ser instaladas separadamente.",
+                I18n.get("mw_bundled_runtime_title", self.lang),
+                I18n.get("mw_bundled_runtime_msg", self.lang),
             )
             return
         launcher_path = Path(__file__).resolve().parent / "launcher.py"
-        subprocess.Popen([sys.executable, str(launcher_path)], cwd=Path(__file__).resolve().parent)
+        subprocess.Popen(
+            [sys.executable, str(launcher_path)], cwd=Path(__file__).resolve().parent
+        )
 
     def retranslate_ui(self, lang: str) -> None:
         """Retranslate the whole main window at runtime."""
@@ -156,7 +184,9 @@ class MainWindow(QMainWindow):
 
     def resizeEvent(self, event) -> None:
         """Reapply the responsive profile when width crosses a profile boundary."""
-        new_profile = ResponsiveManager.profile_for_width(self.width(), self.current_screen_profile)
+        new_profile = ResponsiveManager.profile_for_width(
+            self.width(), self.current_screen_profile
+        )
         if new_profile != self.current_screen_profile:
             self.current_screen_profile = new_profile
             ResponsiveManager.apply_profile(self, new_profile)
@@ -183,14 +213,20 @@ class MainWindow(QMainWindow):
         self.help_menu = menu_bar.addMenu("")
 
         self.export_complex_action = QAction(self)
-        self.export_complex_action.triggered.connect(self.results_tab.open_export_dialog)
+        self.export_complex_action.triggered.connect(
+            self.results_tab.open_export_dialog
+        )
         self.file_menu.addAction(self.export_complex_action)
         self.generate_report_action = QAction(self)
-        self.generate_report_action.triggered.connect(self.report_tab.generate_pdf_report)
+        self.generate_report_action.triggered.connect(
+            self.report_tab.generate_pdf_report
+        )
         self.file_menu.addAction(self.generate_report_action)
 
         self.validate_protocol_action = QAction(self)
-        self.validate_protocol_action.triggered.connect(self.docking_tab.validate_protocol)
+        self.validate_protocol_action.triggered.connect(
+            self.docking_tab.validate_protocol
+        )
         self.analysis_menu.addAction(self.validate_protocol_action)
 
         self.language_group = QActionGroup(self)
@@ -279,7 +315,7 @@ class MainWindow(QMainWindow):
         self.converter_tab._suggest_output()
         self.tabs.setCurrentWidget(self.converter_tab)
         self.statusBar().showMessage(
-            f"PDB preparado pronto para conversão: {Path(filepath).name}", 5000
+            I18n.get("mw_pdb_ready", self.lang).format(name=Path(filepath).name), 5000
         )
 
     def _show_welcome_if_needed(self) -> None:

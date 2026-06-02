@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Shared scroll-area configuration for VinaLab."""
 
 from __future__ import annotations

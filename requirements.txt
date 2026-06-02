@@ -1,29 +1,38 @@
+# VinaLab core runtime — the minimum needed to launch and run docking.
+#
+# Target interpreter: CPython 3.10–3.13 (64-bit). Install into a fresh venv:
+#
+#     python -m venv .venv
+#     .venv\Scripts\activate         # Windows
+#     source .venv/bin/activate      # Linux/macOS
+#     python -m pip install --upgrade pip
+#     python -m pip install -r requirements.txt
+#
+# Notes for reliable cross-machine installs:
+#   * numpy is held below 2.0 on purpose — the AutoDock Vina wheel and several
+#     dependencies are built against the numpy 1.x ABI.
+#   * The heavy ML rescoring stack (torch/dgl/...) lives in
+#     requirements-scoring.txt so a missing torch wheel on a newer Python can
+#     never block the core install. Install it only if you need RTMScore /
+#     DeltaVinaXGB rescoring.
+#   * AutoDock Vina Python bindings are optional; when no wheel exists for your
+#     platform VinaLab falls back to the bundled CLI in tools/vina/.
+
 PySide6>=6.7,<6.8
-meeko
+PySide6-Addons>=6.7,<6.8
+meeko>=0.4
 scipy>=1.10
 gemmi>=0.6
 rdkit>=2023.3.1
 openbabel-wheel>=3.1.1
-pandas
-matplotlib
+pandas>=1.5
+matplotlib>=3.6
 mplcursors>=0.5
-openpyxl
-reportlab
+openpyxl>=3.0
+reportlab>=3.6
 numpy>=1.23,<2
 py3Dmol>=2.0
 wheel>=0.40
-Click>=7.0
-xgboost>=1.4,<2.0
-scikit-learn>=1.0
-joblib>=1.0
---extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.2.2+cpu
-torchdata==0.7.1
-dgl>=1.1
-PyYAML>=6.0
-pydantic>=2.0
-dgllife>=0.3
-MDAnalysis>=2.0
-ProDy>=2.4
-torch-scatter>=2.1
-pyinstaller
+
+# Optional — AutoDock Vina Python API (CLI fallback used when absent):
+# vina>=1.2

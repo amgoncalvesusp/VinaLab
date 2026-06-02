@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Setup tab for receptor and ligand selection."""
 
 from pathlib import Path
@@ -122,7 +123,9 @@ class SetupTab(QWidget):
                 warnings.append(I18n.get("warn_ligand", self.lang))
         else:
             discovered = self.ligand_paths()
-            self.batch_count_label.setText(I18n.get("batch_count", self.lang).format(count=len(discovered)))
+            self.batch_count_label.setText(
+                I18n.get("batch_count", self.lang).format(count=len(discovered))
+            )
             if not discovered:
                 warnings.append(I18n.get("warn_batch", self.lang))
 
@@ -148,6 +151,8 @@ class SetupTab(QWidget):
             "each file is processed sequentially."
         )
         self.batch_folder_edit.setToolTip(self.batch_radio.toolTip())
+        self.rigid_receptor_edit.setToolTip(I18n.get("setup_rigid_tooltip", lang))
+        self.flex_receptor_edit.setToolTip(I18n.get("setup_flex_tooltip", lang))
         self.single_ligand_label.setText(I18n.get("single_ligand_file", lang))
         self.batch_folder_label.setText(I18n.get("batch_folder", lang))
         for button in self.file_buttons:
@@ -171,7 +176,10 @@ class SetupTab(QWidget):
     def _build_receptor_group(self) -> QGroupBox:
         """Build receptor file picker controls."""
         self.receptor_form = QFormLayout(self.receptor_group)
-        self.receptor_form.addRow(self.receptor_file_label, self._file_row(self.receptor_edit, self._pick_receptor))
+        self.receptor_form.addRow(
+            self.receptor_file_label,
+            self._file_row(self.receptor_edit, self._pick_receptor),
+        )
         self.receptor_form.addRow(self.fully_rigid_checkbox)
         self.receptor_form.addRow(
             self.rigid_receptor_label,
@@ -182,20 +190,8 @@ class SetupTab(QWidget):
             self._file_row(self.flex_receptor_edit, self._pick_flexible_receptor),
         )
         self.fully_rigid_checkbox.toggled.connect(self._toggle_flex_visibility)
-        rigid_tooltip = (
-            "Ao usar receptor flexível, a parte rígida deve ser fornecida separadamente "
-            "como PDBQT contendo todos os resíduos NÃO flexíveis. "
-            "Se nenhum resíduo flexível for definido, use apenas o receptor principal e "
-            "deixe este campo vazio."
-        )
-        self.rigid_receptor_edit.setToolTip(rigid_tooltip)
-        flex_tooltip = (
-            "PDBQT contendo a árvore de torsões (ROOT/ENDROOT/BRANCH) gerada por meeko ou "
-            "prepare_flexreceptor4.py. Exemplo: flex_residues.pdbqt. "
-            "Formato de seleção de resíduos: CHAIN:RESNAME:RESNUM "
-            "(por exemplo, A:TYR:48,A:PHE:49)."
-        )
-        self.flex_receptor_edit.setToolTip(flex_tooltip)
+        self.rigid_receptor_edit.setToolTip(I18n.get("setup_rigid_tooltip", self.lang))
+        self.flex_receptor_edit.setToolTip(I18n.get("setup_flex_tooltip", self.lang))
         self.flex_receptor_label.setToolTip(flex_tooltip)
         return self.receptor_group
 
@@ -219,9 +215,13 @@ class SetupTab(QWidget):
         mode_row.addStretch()
         layout.addLayout(mode_row)
         layout.addWidget(self.single_ligand_label)
-        layout.addLayout(self._file_row(self.single_ligand_edit, self._pick_single_ligand))
+        layout.addLayout(
+            self._file_row(self.single_ligand_edit, self._pick_single_ligand)
+        )
         layout.addWidget(self.batch_folder_label)
-        layout.addLayout(self._folder_row(self.batch_folder_edit, self._pick_batch_folder))
+        layout.addLayout(
+            self._folder_row(self.batch_folder_edit, self._pick_batch_folder)
+        )
         layout.addWidget(self.batch_count_label)
         return self.ligand_group
 
@@ -258,7 +258,9 @@ class SetupTab(QWidget):
 
     def _pick_batch_folder(self) -> None:
         """Pick a ligand batch folder."""
-        folder = QFileDialog.getExistingDirectory(self, I18n.get("select_ligand_folder", self.lang))
+        folder = QFileDialog.getExistingDirectory(
+            self, I18n.get("select_ligand_folder", self.lang)
+        )
         if folder:
             self.batch_folder_edit.setText(str(Path(folder)))
             self.validate_inputs()
@@ -294,7 +296,9 @@ class SetupTab(QWidget):
         self.rigid_receptor_label.setText(I18n.get("rigid_receptor", self.lang))
         self.flex_receptor_label.setText(I18n.get("flexible_receptor", self.lang))
         self.fully_rigid_checkbox.setText(
-            "Usar receptor totalmente rígido" if self.lang == "pt" else "Use fully rigid receptor"
+            "Usar receptor totalmente rígido"
+            if self.lang == "pt"
+            else "Use fully rigid receptor"
         )
         self.fully_rigid_checkbox.setToolTip(
             "Quando marcado, oculta o campo de cadeias laterais flexíveis e usa o receptor inteiro como rígido."

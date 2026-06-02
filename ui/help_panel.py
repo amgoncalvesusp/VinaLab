@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Context-sensitive help dock for VinaLab."""
 
 from PySide6.QtCore import Qt

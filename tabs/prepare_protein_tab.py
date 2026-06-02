@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Protein preparation tab: load PDB, strip ligands, select chain, optional H addition stub."""
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.i18n import I18n
 from core.scrolling import ScrollManager
 
 
@@ -215,20 +217,30 @@ class PrepareProteinTab(QWidget):
         if not self.input_path or not self.input_path.exists():
             QMessageBox.warning(
                 self,
-                "Preparar proteína",
-                "Selecione um arquivo PDB válido antes de prosseguir.",
+                I18n.get("pp_prepare_title", self.lang),
+                I18n.get("pp_select_valid_pdb", self.lang),
             )
             return
         output_text = self.output_edit.text().strip()
         if not output_text:
-            QMessageBox.warning(self, "Preparar proteína", "Defina o arquivo de saída.")
+            QMessageBox.warning(
+                self,
+                I18n.get("pp_prepare_title", self.lang),
+                I18n.get("pp_define_output", self.lang),
+            )
             return
         output_path = Path(output_text)
 
         try:
-            lines = self.input_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            lines = self.input_path.read_text(
+                encoding="utf-8", errors="replace"
+            ).splitlines()
         except OSError as exc:
-            QMessageBox.warning(self, "Preparar proteína", f"Falha ao ler PDB: {exc}")
+            QMessageBox.warning(
+                self,
+                I18n.get("pp_prepare_title", self.lang),
+                I18n.get("pp_read_fail", self.lang).format(exc=exc),
+            )
             return
 
         keep_residues = {
@@ -237,7 +249,9 @@ class PrepareProteinTab(QWidget):
             if token.strip()
         }
         selected_chain = self.chain_combo.currentText()
-        chain_filter = selected_chain if selected_chain and len(selected_chain) == 1 else None
+        chain_filter = (
+            selected_chain if selected_chain and len(selected_chain) == 1 else None
+        )
 
         kept: list[str] = []
         removed_hetatm = 0
@@ -259,7 +273,11 @@ class PrepareProteinTab(QWidget):
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text("\n".join(kept) + "\n", encoding="utf-8")
         except OSError as exc:
-            QMessageBox.warning(self, "Preparar proteína", f"Falha ao salvar: {exc}")
+            QMessageBox.warning(
+                self,
+                I18n.get("pp_prepare_title", self.lang),
+                I18n.get("pp_save_fail", self.lang).format(exc=exc),
+            )
             return
 
         self.log_console.append(
@@ -292,9 +310,8 @@ class PrepareProteinTab(QWidget):
         if obabel is None:
             QMessageBox.information(
                 self,
-                "Adicionar hidrogênios",
-                "Open Babel não encontrado. Instale obabel ou use H++/Reduce externamente. "
-                "Funcionalidade indisponível neste ambiente.",
+                I18n.get("pp_add_h_title", self.lang),
+                I18n.get("pp_obabel_missing", self.lang),
             )
             self.log_console.append(
                 f"Adição de hidrogênios solicitada para {output_path.name} — Open Babel indisponível."
@@ -314,14 +331,18 @@ class PrepareProteinTab(QWidget):
         except OSError as exc:
             QMessageBox.warning(
                 self,
-                "Adicionar hidrogênios",
-                f"Falha ao executar Open Babel: {exc}",
+                I18n.get("pp_add_h_title", self.lang),
+                I18n.get("pp_obabel_run_fail", self.lang).format(exc=exc),
             )
             return
 
         if completed.returncode != 0 or not protonated_path.exists():
-            message = completed.stderr.strip() or completed.stdout.strip() or "Open Babel retornou erro."
-            QMessageBox.warning(self, "Adicionar hidrogênios", message)
+            message = (
+                completed.stderr.strip()
+                or completed.stdout.strip()
+                or "Open Babel retornou erro."
+            )
+            QMessageBox.warning(self, I18n.get("pp_add_h_title", self.lang), message)
             self.log_console.append(f"Adição de hidrogênios falhou: {message}")
             return
 

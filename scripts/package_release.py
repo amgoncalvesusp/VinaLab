@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Package VinaLab release artifacts for the current operating system."""
 
 from __future__ import annotations

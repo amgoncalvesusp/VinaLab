@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Molecular file conversion utilities for AutoDock Vina.
 
 AutoDock Vina 1.2.x accepts only PDBQT files for receptor and ligand inputs.
@@ -15,6 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import importlib.util
+import logging
 import math
 from pathlib import Path
 import shutil
@@ -22,6 +24,8 @@ import subprocess
 import sys
 
 from core.file_utils import validate_ligand_pdbqt
+
+logger = logging.getLogger(__name__)
 
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0
 
@@ -43,39 +47,63 @@ class FileConverter:
     def _detect_format(filepath: Path) -> str:
         """Detect pdb, mol2, pdbqt, or unknown from file contents."""
         try:
-            lines = filepath.read_text(encoding="utf-8", errors="replace").splitlines()[:10]
+            lines = filepath.read_text(encoding="utf-8", errors="replace").splitlines()[
+                :40
+            ]
         except OSError:
             return "unknown"
         text = "\n".join(lines).lower()
         if "@<tripos>molecule" in text:
             return "mol2"
+        torsion_markers = {"ROOT", "ENDROOT", "BRANCH", "ENDBRANCH", "TORSDOF"}
+        autodock_only_types = {"A", "HD", "HS", "OA", "OS", "NA", "NS", "SA"}
+        for line in lines:
+            first = line.split(maxsplit=1)[0] if line.split() else ""
+            if first in torsion_markers:
+                return "pdbqt"
         for line in lines:
             if line.startswith(("ATOM", "HETATM")):
-                tokens = line.split()
-                if len(line) > 79 or (len(tokens) >= 2 and _is_float(tokens[-2]) and tokens[-1].isalpha()):
+                last_token = line.split()[-1] if line.split() else ""
+                # AutoDock-only atom types (HD, OA, NA, ...) never appear as PDB element symbols.
+                if last_token in autodock_only_types:
+                    return "pdbqt"
+                # PDBQT carries a partial charge in the fixed-width columns 67-76;
+                # a plain PDB record leaves that column blank (element sits in 77-78).
+                charge_field = line[66:76].strip()
+                if charge_field and _is_float(charge_field):
                     return "pdbqt"
                 return "pdb"
         return "unknown"
 
     @staticmethod
-    def convert_pdb_to_pdbqt_ligand(input_path: Path, output_path: Path) -> ConversionResult:
+    def convert_pdb_to_pdbqt_ligand(
+        input_path: Path, output_path: Path
+    ) -> ConversionResult:
         """Convert a ligand PDB file to PDBQT exclusively via RDKit + Meeko."""
         return FileConverter._convert_ligand_rdkit_meeko(input_path, output_path, "pdb")
 
     @staticmethod
-    def convert_mol2_to_pdbqt_ligand(input_path: Path, output_path: Path) -> ConversionResult:
+    def convert_mol2_to_pdbqt_ligand(
+        input_path: Path, output_path: Path
+    ) -> ConversionResult:
         """Convert a ligand MOL2 file to PDBQT exclusively via RDKit + Meeko."""
-        return FileConverter._convert_ligand_rdkit_meeko(input_path, output_path, "mol2")
+        return FileConverter._convert_ligand_rdkit_meeko(
+            input_path, output_path, "mol2"
+        )
 
     @staticmethod
-    def _convert_ligand_rdkit_meeko(input_path: Path, output_path: Path, input_format: str) -> ConversionResult:
+    def _convert_ligand_rdkit_meeko(
+        input_path: Path, output_path: Path, input_format: str
+    ) -> ConversionResult:
         """RDKit-loads, embeds (if needed), Gasteiger-charges, and Meeko-writes a ligand PDBQT."""
         try:
             from rdkit import Chem
             from rdkit.Chem import AllChem
             from meeko import MoleculePreparation, PDBQTWriterLegacy
         except ImportError as exc:
-            return ConversionResult(False, output_path, "", f"RDKit ou Meeko indisponíveis: {exc}")
+            return ConversionResult(
+                False, output_path, "", f"RDKit ou Meeko indisponíveis: {exc}"
+            )
 
         try:
             if input_format == "mol2":
@@ -93,7 +121,9 @@ class FileConverter:
             else:
                 mol = Chem.MolFromPDBFile(str(input_path), removeHs=False)
             if mol is None:
-                raise ValueError(f"RDKit não conseguiu interpretar o ligante {input_format.upper()}.")
+                raise ValueError(
+                    f"RDKit não conseguiu interpretar o ligante {input_format.upper()}."
+                )
 
             # Sanitize and Kekulize to preserve aromatic ring geometry
             Chem.SanitizeMol(mol)
@@ -105,19 +135,21 @@ class FileConverter:
             if mol.GetNumConformers() == 0:
                 params = AllChem.ETKDGv3()
                 if AllChem.EmbedMolecule(mol, params) != 0:
-                    raise ValueError("RDKit não conseguiu gerar coordenadas 3D para o ligante.")
+                    raise ValueError(
+                        "RDKit não conseguiu gerar coordenadas 3D para o ligante."
+                    )
 
             try:
                 AllChem.ComputeGasteigerCharges(mol)
-            except Exception as _charge_exc:  # noqa: BLE001 - retry after sanitization
+            except Exception:  # noqa: BLE001 - retry after sanitization
                 Chem.SanitizeMol(mol)
-                AllChem.ComputeGasteigerCharges(mol)  # raises if still fails; _charge_exc context preserved
+                AllChem.ComputeGasteigerCharges(mol)
 
             if FileConverter._has_nan_charges(mol):
                 Chem.SanitizeMol(mol)
                 AllChem.ComputeGasteigerCharges(mol)
                 if FileConverter._has_nan_charges(mol):
-                    raise ValueError("Cargas parciais Gasteiger contêm NaN após sanitização do ligante.")
+                    FileConverter._sanitize_nan_charges(mol)
 
             preparator = MoleculePreparation()
             setups = preparator.prepare(mol)
@@ -177,7 +209,12 @@ class FileConverter:
         bonds = sections.get("BOND", [])
         if not atoms:
             return None
-        mol_lines: list[str] = ["", "  VinaLab MOL2 fallback", "", f"{len(atoms):>3}{len(bonds):>3}  0  0  0  0  0  0  0  0999 V2000"]
+        mol_lines: list[str] = [
+            "",
+            "  VinaLab MOL2 fallback",
+            "",
+            f"{len(atoms):>3}{len(bonds):>3}  0  0  0  0  0  0  0  0999 V2000",
+        ]
         for atom_line in atoms:
             tokens = atom_line.split()
             if len(tokens) < 6:
@@ -188,8 +225,12 @@ class FileConverter:
                 z = float(tokens[4])
             except ValueError:
                 return None
-            symbol = "".join(ch for ch in tokens[5].split(".")[0] if ch.isalpha()) or "C"
-            mol_lines.append(f"{x:10.4f}{y:10.4f}{z:10.4f} {symbol:<3} 0  0  0  0  0  0  0  0  0  0  0  0")
+            symbol = (
+                "".join(ch for ch in tokens[5].split(".")[0] if ch.isalpha()) or "C"
+            )
+            mol_lines.append(
+                f"{x:10.4f}{y:10.4f}{z:10.4f} {symbol:<3} 0  0  0  0  0  0  0  0  0  0  0  0"
+            )
         for bond_line in bonds:
             tokens = bond_line.split()
             if len(tokens) < 4:
@@ -200,7 +241,16 @@ class FileConverter:
             except ValueError:
                 continue
             bond_order_token = tokens[3]
-            order_map = {"1": 1, "2": 2, "3": 3, "ar": 4, "am": 1, "du": 1, "un": 1, "nc": 1}
+            order_map = {
+                "1": 1,
+                "2": 2,
+                "3": 3,
+                "ar": 4,
+                "am": 1,
+                "du": 1,
+                "un": 1,
+                "nc": 1,
+            }
             order = order_map.get(bond_order_token.lower(), 1)
             mol_lines.append(f"{begin:>3}{end:>3}{order:>3}  0  0  0  0")
         mol_lines.append("M  END")
@@ -222,12 +272,55 @@ class FileConverter:
         return False
 
     @staticmethod
-    def convert_pdb_to_pdbqt_receptor(input_path: Path, output_path: Path) -> ConversionResult:
+    def _sanitize_nan_charges(mol) -> int:
+        """Replace any NaN/inf/missing Gasteiger partial charge with 0.0 in-place.
+
+        RDKit's Gasteiger implementation may leave NaN/inf values in the
+        ``_GasteigerCharge`` property for some substructures (unusual
+        heteroatoms, charged groups, borderline aromatic systems). Meeko
+        then refuses to prepare the molecule with ``non finite charge: nan``.
+        Rather than abort the whole conversion, we sanitize the offending
+        atoms to 0.0 (neutral) so Meeko can still produce a valid PDBQT.
+        Returns the number of atoms that were sanitized.
+        """
+        sanitized = 0
+        for atom in mol.GetAtoms():
+            try:
+                value = (
+                    float(atom.GetProp("_GasteigerCharge"))
+                    if atom.HasProp("_GasteigerCharge")
+                    else float("nan")
+                )
+            except ValueError:
+                value = float("nan")
+            if math.isnan(value) or math.isinf(value):
+                atom.SetProp("_GasteigerCharge", "0.0")
+                sanitized += 1
+        if sanitized:
+            logger.warning(
+                "Ligante continha %d átomo(s) com carga Gasteiger inválida (NaN/inf). "
+                "Substituídos por 0.0 (neutro) para destravar o Meeko.",
+                sanitized,
+            )
+        else:
+            logger.info("Cargas Gasteiger validadas; nenhuma sanitização necessária.")
+        return sanitized
+
+    @staticmethod
+    def convert_pdb_to_pdbqt_receptor(
+        input_path: Path, output_path: Path
+    ) -> ConversionResult:
         """Convert a receptor PDB file to PDBQT using mk_prepare_receptor.py, then OpenBabel fallback."""
         if shutil.which("mk_prepare_receptor.py"):
             try:
                 result = subprocess.run(
-                    ["mk_prepare_receptor.py", "-i", str(input_path), "-o", str(output_path)],
+                    [
+                        "mk_prepare_receptor.py",
+                        "-i",
+                        str(input_path),
+                        "-o",
+                        str(output_path),
+                    ],
                     capture_output=True,
                     text=True,
                     check=True,
@@ -240,10 +333,14 @@ class FileConverter:
                 primary_log = str(primary_error)
         else:
             primary_log = "mk_prepare_receptor.py não está disponível."
-        return FileConverter._run_openbabel(input_path, output_path, ["-xr"], primary_log)
+        return FileConverter._run_openbabel(
+            input_path, output_path, ["-xr"], primary_log
+        )
 
     @staticmethod
-    def convert_mol2_to_pdbqt_receptor(input_path: Path, output_path: Path) -> ConversionResult:
+    def convert_mol2_to_pdbqt_receptor(
+        input_path: Path, output_path: Path
+    ) -> ConversionResult:
         """Convert a receptor MOL2 file to PDBQT via MOL2 -> PDB (Open Babel) -> PDBQT receptor."""
         intermediate_pdb = output_path.with_suffix(".tmp.pdb")
         obabel_result = FileConverter._run_openbabel(
@@ -257,10 +354,13 @@ class FileConverter:
                 False,
                 output_path,
                 obabel_result.log,
-                obabel_result.errors or "Falha ao converter MOL2 -> PDB com Open Babel.",
+                obabel_result.errors
+                or "Falha ao converter MOL2 -> PDB com Open Babel.",
             )
         try:
-            return FileConverter.convert_pdb_to_pdbqt_receptor(intermediate_pdb, output_path)
+            return FileConverter.convert_pdb_to_pdbqt_receptor(
+                intermediate_pdb, output_path
+            )
         finally:
             try:
                 intermediate_pdb.unlink(missing_ok=True)
@@ -273,20 +373,38 @@ class FileConverter:
         detected = FileConverter._detect_format(input_path)
         output_path = input_path.with_suffix(".pdbqt")
         if detected == "pdbqt":
-            return ConversionResult(True, input_path, "Arquivo já está em PDBQT; conversão não necessária.", "")
+            return ConversionResult(
+                True,
+                input_path,
+                "Arquivo já está em PDBQT; conversão não necessária.",
+                "",
+            )
         if detected == "unknown":
-            return ConversionResult(False, output_path, "", "Formato de arquivo não reconhecido.")
+            return ConversionResult(
+                False, output_path, "", "Formato de arquivo não reconhecido."
+            )
         if molecule_type == "receptor":
             if detected == "pdb":
-                return FileConverter.convert_pdb_to_pdbqt_receptor(input_path, output_path)
+                return FileConverter.convert_pdb_to_pdbqt_receptor(
+                    input_path, output_path
+                )
             if detected == "mol2":
-                return FileConverter.convert_mol2_to_pdbqt_receptor(input_path, output_path)
-            return ConversionResult(False, output_path, "", "A conversão de receptor aceita entrada PDB, MOL2 ou PDBQT.")
+                return FileConverter.convert_mol2_to_pdbqt_receptor(
+                    input_path, output_path
+                )
+            return ConversionResult(
+                False,
+                output_path,
+                "",
+                "A conversão de receptor aceita entrada PDB, MOL2 ou PDBQT.",
+            )
         if detected == "pdb":
             return FileConverter.convert_pdb_to_pdbqt_ligand(input_path, output_path)
         if detected == "mol2":
             return FileConverter.convert_mol2_to_pdbqt_ligand(input_path, output_path)
-        return ConversionResult(False, output_path, "", "Formato de arquivo não reconhecido.")
+        return ConversionResult(
+            False, output_path, "", "Formato de arquivo não reconhecido."
+        )
 
     @staticmethod
     def check_dependencies() -> dict:
@@ -302,14 +420,23 @@ class FileConverter:
         }
 
     @staticmethod
-    def _run_openbabel(input_path: Path, output_path: Path, extra_args: list[str], previous_error: str) -> ConversionResult:
+    def _run_openbabel(
+        input_path: Path, output_path: Path, extra_args: list[str], previous_error: str
+    ) -> ConversionResult:
         """Run OpenBabel CLI conversion as a fallback."""
         obabel = shutil.which("obabel")
         if obabel is None:
-            candidate = Path(sys.executable).resolve().parent / ("obabel.exe" if sys.platform.startswith("win") else "obabel")
+            candidate = Path(sys.executable).resolve().parent / (
+                "obabel.exe" if sys.platform.startswith("win") else "obabel"
+            )
             obabel = str(candidate) if candidate.exists() else None
         if obabel is None:
-            return ConversionResult(False, output_path, "", f"{previous_error}\nMeeko+RDKit e OpenBabel não estão disponíveis.")
+            return ConversionResult(
+                False,
+                output_path,
+                "",
+                f"{previous_error}\nMeeko+RDKit e OpenBabel não estão disponíveis.",
+            )
         try:
             result = subprocess.run(
                 [obabel, str(input_path), "-O", str(output_path), *extra_args],
@@ -318,70 +445,33 @@ class FileConverter:
                 check=True,
                 creationflags=NO_WINDOW,
             )
-            return ConversionResult(True, output_path, result.stdout or "Convertido com OpenBabel.", result.stderr)
-        except subprocess.CalledProcessError as fallback_error:
-            return ConversionResult(False, output_path, fallback_error.stdout or "", f"{previous_error}\n{fallback_error.stderr}")
-
-    @staticmethod
-    def _run_meeko_ligand(
-        input_path: Path,
-        output_path: Path,
-        input_format: str,
-        previous_error: str,
-        reference_mol=None,
-        pre_stats: str = "indisponível",
-    ) -> ConversionResult:
-        """Fallback ligand conversion with Meeko/RDKit when direct Open Babel fails."""
-        try:
-            from rdkit import Chem
-            from meeko import MoleculePreparation, PDBQTWriterLegacy
-
-            mol = reference_mol or (
-                Chem.MolFromPDBFile(str(input_path), removeHs=False)
-                if input_format == "pdb"
-                else Chem.MolFromMol2File(str(input_path), removeHs=False)
-            )
-            if mol is None:
-                raise ValueError(f"RDKit não conseguiu interpretar o ligante {input_format.upper()}.")
-            if mol.GetNumConformers() == 0:
-                raise ValueError("O ligante não tem coordenadas 3D para preservar.")
-            mol_block = Chem.MolToMolBlock(mol)
-            pdb_mol = Chem.MolFromMolBlock(mol_block, removeHs=False, sanitize=False)
-            if pdb_mol is None:
-                raise ValueError("RDKit não conseguiu recriar o bloco molecular do ligante.")
-            Chem.rdmolfiles.MolToPDBBlock(pdb_mol)
-            preparator = MoleculePreparation()
-            setups = preparator.prepare(pdb_mol)
-            if hasattr(preparator, "write_pdbqt_file"):
-                preparator.write_pdbqt_file(str(output_path))
-            else:
-                pdbqt_text, ok, error_msg = PDBQTWriterLegacy.write_string(setups[0])
-                if not ok:
-                    raise ValueError(error_msg)
-                output_path.write_text(pdbqt_text, encoding="utf-8")
-            return FileConverter._validated_ligand_result(
+            return ConversionResult(
+                True,
                 output_path,
-                FileConverter._geometry_log(
-                    f"{previous_error}\nFallback: ligante convertido com Meeko + RDKit.",
-                    pre_stats,
-                    FileConverter._bond_length_stats_from_pdbqt(output_path, mol),
-                ),
-                "",
-                mol,
+                result.stdout or "Convertido com OpenBabel.",
+                result.stderr,
             )
-        except Exception as exc:  # noqa: BLE001 - all conversion attempts should be reported together
-            message = "Erro na conversão do ligante: geometria molecular inválida após conversão."
-            return ConversionResult(False, output_path, "", f"{previous_error}\nFallback Meeko + RDKit falhou: {exc}\n{message}".strip())
+        except subprocess.CalledProcessError as fallback_error:
+            return ConversionResult(
+                False,
+                output_path,
+                fallback_error.stdout or "",
+                f"{previous_error}\n{fallback_error.stderr}",
+            )
 
     @staticmethod
-    def _validated_ligand_result(output_path: Path, log: str, errors: str, reference_mol=None) -> ConversionResult:
+    def _validated_ligand_result(
+        output_path: Path, log: str, errors: str, reference_mol=None
+    ) -> ConversionResult:
         """Return a successful conversion only when the PDBQT is one connected ligand."""
         try:
             validate_ligand_pdbqt(output_path)
             FileConverter._validate_ligand_bond_geometry(output_path, reference_mol)
         except ValueError as exc:
             message = "Erro na conversão do ligante: geometria molecular inválida após conversão."
-            return ConversionResult(False, output_path, log, f"{errors}\n{message}\n{exc}".strip())
+            return ConversionResult(
+                False, output_path, log, f"{errors}\n{message}\n{exc}".strip()
+            )
         return ConversionResult(True, output_path, log, errors)
 
     @staticmethod
@@ -391,9 +481,13 @@ class FileConverter:
             from rdkit import Chem
 
             if input_format == "pdb":
-                return Chem.MolFromPDBFile(str(input_path), removeHs=False, sanitize=False)
+                return Chem.MolFromPDBFile(
+                    str(input_path), removeHs=False, sanitize=False
+                )
             if input_format == "mol2":
-                return Chem.MolFromMol2File(str(input_path), removeHs=False, sanitize=False)
+                return Chem.MolFromMol2File(
+                    str(input_path), removeHs=False, sanitize=False
+                )
         except Exception:  # noqa: BLE001 - missing/invalid RDKit is handled by validation failure
             return None
         return None
@@ -417,7 +511,9 @@ class FileConverter:
             end = bond.GetEndAtomIdx()
             if begin >= len(output_atoms) or end >= len(output_atoms):
                 continue
-            actual = FileConverter._distance(output_atoms[begin]["xyz"], output_atoms[end]["xyz"])
+            actual = FileConverter._distance(
+                output_atoms[begin]["xyz"], output_atoms[end]["xyz"]
+            )
             ideal = FileConverter._rdkit_ideal_bond_length(bond)
             if ideal <= 0:
                 continue
@@ -427,7 +523,9 @@ class FileConverter:
                     f"{begin + 1}-{end + 1}: observado={actual:.3f} Å, ideal={ideal:.3f} Å, desvio={deviation:.1%}"
                 )
         if failures:
-            raise ValueError("Ligações fora da tolerância de 30%: " + "; ".join(failures[:8]))
+            raise ValueError(
+                "Ligações fora da tolerância de 30%: " + "; ".join(failures[:8])
+            )
 
     @staticmethod
     def _bond_length_stats(mol) -> str:
@@ -439,7 +537,11 @@ class FileConverter:
         for bond in mol.GetBonds():
             begin = conformer.GetAtomPosition(bond.GetBeginAtomIdx())
             end = conformer.GetAtomPosition(bond.GetEndAtomIdx())
-            lengths.append(FileConverter._distance((begin.x, begin.y, begin.z), (end.x, end.y, end.z)))
+            lengths.append(
+                FileConverter._distance(
+                    (begin.x, begin.y, begin.z), (end.x, end.y, end.z)
+                )
+            )
         return FileConverter._format_stats(lengths)
 
     @staticmethod
@@ -451,7 +553,9 @@ class FileConverter:
         if len(atoms) != reference_mol.GetNumAtoms():
             return f"indisponível (átomos entrada={reference_mol.GetNumAtoms()}, saída={len(atoms)})"
         lengths = [
-            FileConverter._distance(atoms[bond.GetBeginAtomIdx()]["xyz"], atoms[bond.GetEndAtomIdx()]["xyz"])
+            FileConverter._distance(
+                atoms[bond.GetBeginAtomIdx()]["xyz"], atoms[bond.GetEndAtomIdx()]["xyz"]
+            )
             for bond in reference_mol.GetBonds()
         ]
         return FileConverter._format_stats(lengths)
@@ -495,7 +599,9 @@ class FileConverter:
         periodic_table = Chem.GetPeriodicTable()
         left = bond.GetBeginAtom()
         right = bond.GetEndAtom()
-        base = periodic_table.GetRcovalent(left.GetAtomicNum()) + periodic_table.GetRcovalent(right.GetAtomicNum())
+        base = periodic_table.GetRcovalent(
+            left.GetAtomicNum()
+        ) + periodic_table.GetRcovalent(right.GetAtomicNum())
         order_scale = {
             Chem.BondType.SINGLE: 1.00,
             Chem.BondType.AROMATIC: 0.93,
@@ -505,9 +611,15 @@ class FileConverter:
         return base * order_scale
 
     @staticmethod
-    def _distance(left: tuple[float, float, float], right: tuple[float, float, float]) -> float:
+    def _distance(
+        left: tuple[float, float, float], right: tuple[float, float, float]
+    ) -> float:
         """Return Euclidean distance between two 3D points."""
-        return math.sqrt((left[0] - right[0]) ** 2 + (left[1] - right[1]) ** 2 + (left[2] - right[2]) ** 2)
+        return math.sqrt(
+            (left[0] - right[0]) ** 2
+            + (left[1] - right[1]) ** 2
+            + (left[2] - right[2]) ** 2
+        )
 
 
 def _is_float(value: str) -> bool:

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Responsive layout management for VinaLab."""
 
 from __future__ import annotations

@@ -1,0 +1,31 @@
+# VinaLab optional ML rescoring runtimes (RTMScore, DeltaVinaXGB-Light).
+#
+# Install ONLY if you need these external scoring functions. The packages here
+# are large and platform/Python-version sensitive (notably torch), which is why
+# they are kept out of the core requirements.txt — a missing torch wheel must
+# never block a normal VinaLab install.
+#
+#     python -m pip install -r requirements-scoring.txt
+#
+# torch is pinned to the CPU build. If this exact version has no wheel for your
+# Python, install a compatible torch first (see https://pytorch.org/get-started)
+# and then re-run this file.
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# DeltaVinaXGB-Light
+Click>=7.0
+xgboost>=1.4,<2.0
+scikit-learn>=1.0
+joblib>=1.0
+
+# RTMScore
+torch==2.2.2+cpu
+torchdata==0.7.1
+dgl>=1.1
+PyYAML>=6.0
+pydantic>=2.0
+dgllife>=0.3
+MDAnalysis>=2.0
+ProDy>=2.4
+torch-scatter>=2.1

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """First-run welcome dialog for VinaLab."""
 
 from pathlib import Path

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Unit tests for docking helper utilities."""
 
 from pathlib import Path

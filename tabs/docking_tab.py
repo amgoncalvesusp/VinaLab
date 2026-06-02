@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Docking parameter tab and execution wiring.
 
 Scoring-function ranking based on benchmark literature (2021-2025):
@@ -39,7 +40,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.docking_engine import DockingWorker, discover_external_scoring_functions, find_obabel_executable
+from core.docking_engine import (
+    DockingWorker,
+    discover_external_scoring_functions,
+    find_obabel_executable,
+)
 from core.environment_manager import EnvironmentManager
 from core.file_utils import is_pdbqt_file, pdbqt_coordinate_bounds, pdbqt_receptor_atoms
 from core.i18n import I18n
@@ -49,57 +54,61 @@ from core.scrolling import ScrollManager
 SCORING_OPTIONS = [
     {
         "key": "gnina",
-        "label_pt": "GNINA (CNN) ★★★★",
-        "label_en": "GNINA (CNN) ★★★★",
+        "label_pt": "GNINA (CNN)",
+        "label_en": "GNINA (CNN)",
         "desc_pt": "Melhor desempenho em triagem virtual (deep learning). Requer binário GNINA externo.",
         "desc_en": "Best virtual screening performance (deep learning). Requires an external GNINA binary.",
-        "badge_key": "badge_best",
-        "badge_object": "badge_best",
         "ref_url": "https://doi.org/10.1186/s13321-025-00973-x",
         "ref_label": "McNutt et al., J. Cheminformatics 2025",
         "available_check": "gnina_binary",
         "vina_sf_name": None,
+        "stars": 4,
     },
     {
         "key": "vinardo",
-        "label_pt": "Vinardo ★★★☆",
-        "label_en": "Vinardo ★★★☆",
+        "label_pt": "Vinardo",
+        "label_en": "Vinardo",
         "desc_pt": "Supera Vina em todos os benchmarks CASF. Recomendado para triagem virtual.",
         "desc_en": "Outperforms Vina in all CASF benchmarks. Recommended for virtual screening.",
-        "badge_key": "badge_recommended",
-        "badge_object": "badge_recommended",
         "ref_url": "https://doi.org/10.1371/journal.pone.0155183",
         "ref_label": "Quiroga & Villarreal, PLoS ONE 2016",
         "available_check": "always",
         "vina_sf_name": "vinardo",
+        "stars": 3,
     },
     {
         "key": "vina",
-        "label_pt": "Vina (padrão) ★★☆☆",
-        "label_en": "Vina (standard) ★★☆☆",
+        "label_pt": "Vina (padrão)",
+        "label_en": "Vina (standard)",
         "desc_pt": "Função padrão. Rápida e amplamente validada.",
         "desc_en": "Standard function. Fast and widely validated.",
-        "badge_key": "badge_default",
-        "badge_object": "badge_default",
         "ref_url": "https://doi.org/10.1002/jcc.21334",
         "ref_label": "Trott & Olson, J. Comput. Chem. 2010",
         "available_check": "always",
         "vina_sf_name": "vina",
+        "stars": 2,
     },
     {
         "key": "ad4",
-        "label_pt": "AutoDock4 (ad4) ★★☆☆",
-        "label_en": "AutoDock4 (ad4) ★★☆☆",
+        "label_pt": "AutoDock4 (ad4)",
+        "label_en": "AutoDock4 (ad4)",
         "desc_pt": "Campo de força clássico. Melhor para metaloproteínas. Requer mapas de afinidade (AutoGrid4).",
         "desc_en": "Classic force field. Best for metalloproteins. Requires affinity maps (AutoGrid4).",
-        "badge_key": "badge_specialized",
-        "badge_object": "badge_specialized",
         "ref_url": "https://doi.org/10.1021/acs.jcim.1c00203",
         "ref_label": "Eberhardt et al., J. Chem. Inf. Model. 2021",
         "available_check": "always",
         "vina_sf_name": "ad4",
+        "stars": 1,
     },
 ]
+
+MAX_STARS = 4
+
+
+def _render_stars(n: int) -> str:
+    """Render a fixed-width 4-star rating string."""
+    filled = max(0, min(MAX_STARS, int(n)))
+    return "\u2605" * filled + "\u2606" * (MAX_STARS - filled)
 
 
 class ScoringFunctionSelector(QGroupBox):
@@ -111,7 +120,9 @@ class ScoringFunctionSelector(QGroupBox):
         """Create checkboxes for supported scoring functions."""
         super().__init__()
         self.lang = "pt"
-        self.prefs_path = Path(__file__).resolve().parents[1] / "config" / "user_prefs.json"
+        self.prefs_path = (
+            Path(__file__).resolve().parents[1] / "config" / "user_prefs.json"
+        )
         self.checkboxes: dict[str, QCheckBox] = {}
 
         self.description_labels: dict[str, QLabel] = {}
@@ -122,7 +133,9 @@ class ScoringFunctionSelector(QGroupBox):
 
     def selected_keys(self) -> list[str]:
         """Return all selected scoring option keys."""
-        return [key for key, checkbox in self.checkboxes.items() if checkbox.isChecked()]
+        return [
+            key for key, checkbox in self.checkboxes.items() if checkbox.isChecked()
+        ]
 
     def current_key(self) -> str:
         """Return the first selected scoring option key for legacy callers."""
@@ -131,7 +144,7 @@ class ScoringFunctionSelector(QGroupBox):
 
     def current_vina_sf_name(self) -> str | None:
         """Return the Vina Python sf_name for the current scoring option."""
-        option = self._option_for_key(self.current_key())
+        option = self.option_for_key(self.current_key())
         return option["vina_sf_name"] if option else "vina"
 
     def set_current_key(self, key: str) -> None:
@@ -140,7 +153,11 @@ class ScoringFunctionSelector(QGroupBox):
 
     def set_selected_keys(self, keys: list[str]) -> None:
         """Select one or more scoring functions."""
-        valid_keys = [key for key in keys if key in self.checkboxes and self.checkboxes[key].isEnabled()]
+        valid_keys = [
+            key
+            for key in keys
+            if key in self.checkboxes and self.checkboxes[key].isEnabled()
+        ]
         if not valid_keys:
             valid_keys = ["vina"]
         for key, checkbox in self.checkboxes.items():
@@ -156,11 +173,15 @@ class ScoringFunctionSelector(QGroupBox):
         self.setTitle(I18n.get("scoring_group", lang))
         for option in self.options:
             key = option["key"]
-            self.checkboxes[key].setText(option["label_pt"] if lang == "pt" else option["label_en"])
-            self.description_labels[key].setText(self._description_with_status(option, lang))
+            base_label = option["label_pt"] if lang == "pt" else option["label_en"]
+            stars = _render_stars(option.get("stars", 0))
+            self.checkboxes[key].setText(f"{base_label} {stars}")
+            self.description_labels[key].setText(
+                self._description_with_status(option, lang)
+            )
             self.reference_buttons[key].setText(I18n.get("ref_button", lang))
             self.reference_buttons[key].setToolTip(option["ref_label"])
-            unavailable_reason = self._unavailable_reason(option, lang)
+            unavailable_reason = self.unavailable_reason(option, lang)
             self.checkboxes[key].setToolTip(unavailable_reason)
 
     def _build_ui(self) -> None:
@@ -177,13 +198,17 @@ class ScoringFunctionSelector(QGroupBox):
             description = QLabel()
             description.setObjectName("label_muted")
             description.setWordWrap(True)
-            unavailable_reason = self._unavailable_reason(option, self.lang)
+            unavailable_reason = self.unavailable_reason(option, self.lang)
             if unavailable_reason:
                 checkbox.setEnabled(False)
                 description.setEnabled(False)
                 checkbox.setToolTip(unavailable_reason)
-            ref_button.clicked.connect(lambda _, url=option["ref_url"]: QDesktopServices.openUrl(QUrl(url)))
-            checkbox.toggled.connect(lambda checked, key=option["key"]: self._selection_toggled(key, checked))
+            ref_button.clicked.connect(
+                lambda _, url=option["ref_url"]: QDesktopServices.openUrl(QUrl(url))
+            )
+            checkbox.toggled.connect(
+                lambda checked, key=option["key"]: self._selection_toggled(key, checked)
+            )
             self.checkboxes[option["key"]] = checkbox
             self.description_labels[option["key"]] = description
             self.reference_buttons[option["key"]] = ref_button
@@ -229,11 +254,15 @@ class ScoringFunctionSelector(QGroupBox):
         prefs["scoring_functions"] = keys
         prefs["scoring_function"] = keys[0] if keys else "vina"
         self.prefs_path.parent.mkdir(parents=True, exist_ok=True)
-        self.prefs_path.write_text(json.dumps(prefs, indent=2, ensure_ascii=False), encoding="utf-8")
+        self.prefs_path.write_text(
+            json.dumps(prefs, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
 
     def _external_options(self) -> list[dict]:
         """Build options for pontuacao/ scoring bundles."""
-        available = {item["key"]: item for item in discover_external_scoring_functions()}
+        available = {
+            item["key"]: item for item in discover_external_scoring_functions()
+        }
         definitions = [
             {
                 "key": "rtmscore",
@@ -241,8 +270,6 @@ class ScoringFunctionSelector(QGroupBox):
                 "label_en": "RTMScore",
                 "desc_pt": "Graph Transformer; forte em CASF-2016 para pose e triagem. Requer torch/dgl/MDAnalysis.",
                 "desc_en": "Graph Transformer; strong CASF-2016 pose and screening performance. Requires torch/dgl/MDAnalysis.",
-                "badge_key": "badge_best",
-                "badge_object": "badge_best",
                 "ref_url": "https://pubs.acs.org/doi/10.1021/acs.jmedchem.2c00991",
                 "ref_label": "RTMScore, J. Med. Chem. 2022",
                 "available_check": "archive",
@@ -254,8 +281,6 @@ class ScoringFunctionSelector(QGroupBox):
                 "label_en": "DeltaVinaXGB-Light",
                 "desc_pt": "XGBoost sobre componentes do Vina; recomendado para validacao cruzada em CASF-2016.",
                 "desc_en": "XGBoost over Vina components; recommended for CASF-2016 cross-validation.",
-                "badge_key": "badge_recommended",
-                "badge_object": "badge_recommended",
                 "ref_url": "https://www.mdpi.com/1420-3049/27/14/4568/xml",
                 "ref_label": "ML-era docking review, Molecules 2022",
                 "available_check": "archive",
@@ -267,8 +292,6 @@ class ScoringFunctionSelector(QGroupBox):
                 "label_en": "DeltaVinaRF20",
                 "desc_pt": "Random Forest que corrige Vina; historicamente forte em CASF-2013/2007, mas requer Python 2/R.",
                 "desc_en": "Random Forest correction to Vina; historically strong on CASF-2013/2007, but requires Python 2/R.",
-                "badge_key": "badge_specialized",
-                "badge_object": "badge_specialized",
                 "ref_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC5140681/",
                 "ref_label": "DeltaVinaRF20, J. Comput. Chem. 2016",
                 "available_check": "archive",
@@ -279,7 +302,10 @@ class ScoringFunctionSelector(QGroupBox):
             option["archive_available"] = option["key"] in available
         manager = EnvironmentManager(Path(__file__).resolve().parents[1])
         cached_report = manager.cached_status_report()
-        statuses = cached_report.get("scoring_functions") or manager.scoring_function_statuses()
+        statuses = (
+            cached_report.get("scoring_functions")
+            or manager.scoring_function_statuses()
+        )
         for option in definitions:
             status = statuses.get(option["key"], {})
             option["dependency_available"] = bool(status.get("available", False))
@@ -291,30 +317,46 @@ class ScoringFunctionSelector(QGroupBox):
         """Return scoring options ordered by literature-based recommendation."""
         native = {option["key"]: option for option in SCORING_OPTIONS}
         external = {option["key"]: option for option in self._external_options()}
-        order = ["rtmscore", "gnina", "delta_vina_xgb", "deltavina_rf20", "vinardo", "vina", "ad4"]
+        order = [
+            "rtmscore",
+            "gnina",
+            "delta_vina_xgb",
+            "deltavina_rf20",
+            "vinardo",
+            "vina",
+            "ad4",
+        ]
         merged = {**native, **external}
         return [merged[key] for key in order if key in merged]
 
-    def _option_for_key(self, key: str) -> dict | None:
+    def option_for_key(self, key: str) -> dict | None:
         """Return an option dictionary by key."""
         return next((option for option in self.options if option["key"] == key), None)
 
     def _description_with_status(self, option: dict, lang: str) -> str:
         """Return the option description plus an availability line."""
         description = option["desc_pt"] if lang == "pt" else option["desc_en"]
-        reason = self._unavailable_reason(option, lang)
+        reason = self.unavailable_reason(option, lang)
         if reason:
-            return f"{description}\nStatus: indisponível - {reason}"
-        return f"{description}\nStatus: disponível"
+            return I18n.get("dt_status_unavailable", lang).format(
+                description=description, reason=reason
+            )
+        return I18n.get("dt_status_available", lang).format(description=description)
 
-    def _unavailable_reason(self, option: dict, lang: str) -> str:
+    def unavailable_reason(self, option: dict, lang: str) -> str:
         """Return a user-facing reason when a scoring option is unavailable."""
         if option["available_check"] == "gnina_binary" and _gnina_executable() is None:
             return I18n.get("scoring_gnina_warn", lang)
-        if option["available_check"] == "archive" and not option.get("archive_available", False):
-            return "Arquivo de pontuação não encontrado em pontuacao/."
-        if option["available_check"] == "archive" and not option.get("dependency_available", True):
-            return option.get("unavailable_reason") or "Dependência opcional de pontuação ausente."
+        if option["available_check"] == "archive" and not option.get(
+            "archive_available", False
+        ):
+            return I18n.get("dt_scoring_archive_missing", lang)
+        if option["available_check"] == "archive" and not option.get(
+            "dependency_available", True
+        ):
+            return option.get("unavailable_reason") or I18n.get(
+                "dt_scoring_dep_missing", lang
+            )
         return ""
 
 
@@ -350,13 +392,16 @@ class DockingTab(QWidget):
         self.blind_dock_button = QPushButton()
         self.save_box_button = QPushButton()
         self.load_box_button = QPushButton()
-        self.box_presets_path = Path(__file__).resolve().parents[1] / "config" / "box_presets.json"
+        self.box_presets_path = (
+            Path(__file__).resolve().parents[1] / "config" / "box_presets.json"
+        )
         self.exhaustiveness = self._spin(1, 512, 8)
         self.num_modes = self._spin(1, 20, 9)  # max poses raised to 20
         self.energy_range = self._double_spin(1, 10, 0.5, 1, 3.0)
         self.cpu = self._spin(0, 64, 0)
         self.seed = self._spin(0, 2147483647, 0)
-        self.fix_seed = QCheckBox("Fixar semente para reprodutibilidade")
+        self.fix_seed = QCheckBox("Fixar semente para\nreprodutibilidade")
+        self.fix_seed.setObjectName("check_fix_seed")
         self.min_rmsd = self._double_spin(0, 20, 0.1, 2, 1.0)
         self.output_edit = QLineEdit()
         self.progress_bar = QProgressBar()
@@ -377,20 +422,25 @@ class DockingTab(QWidget):
         self.save_button = QPushButton()
         self.load_button = QPushButton()
         self.output_button = QPushButton()
-        self.labels = {key: QLabel() for key in (
-            "scoring_label",
-            "center_label",
-            "size_label",
-            "exhaustiveness",
-            "num_modes",
-            "energy_range",
-            "cpu_label",
-            "seed_label",
-            "min_rmsd",
-            "output_dir",
-        )}
+        self.labels = {
+            key: QLabel()
+            for key in (
+                "scoring_label",
+                "center_label",
+                "size_label",
+                "exhaustiveness",
+                "num_modes",
+                "energy_range",
+                "cpu_label",
+                "seed_label",
+                "min_rmsd",
+                "output_dir",
+            )
+        }
         for label in self.labels.values():
             label.setObjectName("label_field")
+            label.setWordWrap(True)
+            label.setMinimumWidth(300)
         self._build_ui()
         self._connect_signals()
         self.retranslate_ui(self.lang)
@@ -462,7 +512,9 @@ class DockingTab(QWidget):
         if not file_name:
             return
         values: dict[str, str] = {}
-        for raw_line in Path(file_name).read_text(encoding="utf-8", errors="replace").splitlines():
+        for raw_line in (
+            Path(file_name).read_text(encoding="utf-8", errors="replace").splitlines()
+        ):
             line = raw_line.split("#", 1)[0].strip()
             if not line or "=" not in line:
                 continue
@@ -473,14 +525,26 @@ class DockingTab(QWidget):
     def launch_docking(self) -> None:
         """Validate all inputs and start the docking worker thread."""
         if self.worker and self.worker.isRunning():
-            QMessageBox.warning(self, I18n.get("docking_running", self.lang), I18n.get("docking_running_msg", self.lang))
+            QMessageBox.warning(
+                self,
+                I18n.get("docking_running", self.lang),
+                I18n.get("docking_running_msg", self.lang),
+            )
             return
         if not self.setup_provider.validate_inputs():
-            QMessageBox.warning(self, I18n.get("invalid_setup", self.lang), I18n.get("invalid_setup_msg", self.lang))
+            QMessageBox.warning(
+                self,
+                I18n.get("invalid_setup", self.lang),
+                I18n.get("invalid_setup_msg", self.lang),
+            )
             return
         output_directory = self.output_directory()
         if output_directory is None:
-            QMessageBox.warning(self, I18n.get("missing_output", self.lang), I18n.get("missing_output_msg", self.lang))
+            QMessageBox.warning(
+                self,
+                I18n.get("missing_output", self.lang),
+                I18n.get("missing_output_msg", self.lang),
+            )
             return
 
         parameters = self.current_parameters()
@@ -509,25 +573,50 @@ class DockingTab(QWidget):
     def validate_protocol(self) -> None:
         """Run redocking validation against a crystallographic reference pose."""
         if self.worker and self.worker.isRunning():
-            QMessageBox.warning(self, I18n.get("docking_running", self.lang), I18n.get("docking_running_msg", self.lang))
+            QMessageBox.warning(
+                self,
+                I18n.get("docking_running", self.lang),
+                I18n.get("docking_running_msg", self.lang),
+            )
             return
         if not self.setup_provider.validate_inputs():
-            QMessageBox.warning(self, I18n.get("invalid_setup", self.lang), I18n.get("invalid_setup_msg", self.lang))
+            QMessageBox.warning(
+                self,
+                I18n.get("invalid_setup", self.lang),
+                I18n.get("invalid_setup_msg", self.lang),
+            )
             return
-        reference_file, _ = QFileDialog.getOpenFileName(self, "Pose cristalográfica de referência", "", "Arquivos PDBQT (*.pdbqt);;Todos os arquivos (*)")
+        reference_file, _ = QFileDialog.getOpenFileName(
+            self,
+            I18n.get("dt_ref_crystal_pose_title", self.lang),
+            "",
+            f"{I18n.get('pdbqt_filter', self.lang)};;{I18n.get('all_files', self.lang)}",
+        )
         if not reference_file:
             return
-        top_n, ok = QInputDialog.getInt(self, "Validar protocolo", "Corte de sucesso Top-N", 10, 1, 100, 1)
+        top_n, ok = QInputDialog.getInt(
+            self,
+            I18n.get("dt_validate_protocol_title", self.lang),
+            I18n.get("dt_topn_prompt", self.lang),
+            10,
+            1,
+            100,
+            1,
+        )
         if not ok:
             return
-        output_directory = (self.output_directory() or Path.cwd()) / "validation_redocking"
+        output_directory = (
+            self.output_directory() or Path.cwd()
+        ) / "validation_redocking"
         output_directory.mkdir(parents=True, exist_ok=True)
         self.validation_rows = []
         self.validation_reference_path = Path(reference_file)
         self.validation_top_n = top_n
         parameters = self.current_parameters()
         parameters["out"] = str(output_directory)
-        self.results_consumer.append_log(f"Iniciando redocking de validação do protocolo em {output_directory}.")
+        self.results_consumer.append_log(
+            I18n.get("dt_validation_start", self.lang).format(path=output_directory)
+        )
         self.run_button.setEnabled(False)
         self.docking_launched.emit()
         self.worker = DockingWorker(
@@ -554,7 +643,11 @@ class DockingTab(QWidget):
         """Open validation report after redocking completes."""
         if self.validation_reference_path is None:
             return
-        self.results_consumer.append_log(f"Validação do protocolo interpretou {len(self.validation_rows)} pose(s).")
+        self.results_consumer.append_log(
+            I18n.get("dt_validation_parsed", self.lang).format(
+                count=len(self.validation_rows)
+            )
+        )
         self.results_consumer.show_validation_report(
             self.validation_rows,
             self.validation_reference_path,
@@ -572,22 +665,18 @@ class DockingTab(QWidget):
         self.checklist_group.setTitle(I18n.get("pre_run_checklist", lang))
         for key, label in self.labels.items():
             label.setText(I18n.get(key, lang))
+        self._set_parameter_explanations()
         self.fix_seed.setText(I18n.get("fix_seed", lang))
         self.save_button.setText(I18n.get("save_config", lang))
+        self._populate_size_presets()
         self.load_button.setText(I18n.get("load_config", lang))
         self.auto_grid_button.setText(I18n.get("adjust_box_size_ligand", lang))
         self.atom_center_checkbox.setText(I18n.get("choose_receptor_atom", lang))
         self.reload_atoms_button.setText(I18n.get("load_receptor_atoms", lang))
         self.snap_atom_button.setText(I18n.get("snap_selected_atom", lang))
         self.snap_ligand_button.setText(I18n.get("snap_crystal_ligand", lang))
-        self.blind_dock_button.setText(
-            "Modo blind docking (Rg)" if lang == "pt" else "Blind docking (Rg)"
-        )
-        self.blind_dock_button.setToolTip(
-            "Calcula o raio de giração do ligante e define tamanho da caixa = 2*Rg + 2 Å, centralizada no centroide."
-            if lang == "pt"
-            else "Computes ligand radius of gyration and sets box size = 2*Rg + 2 Å centered on the centroid."
-        )
+        self.blind_dock_button.setText(I18n.get("blind_dock", lang))
+        self.blind_dock_button.setToolTip(I18n.get("tip_blind_dock", lang))
         self.save_box_button.setText(I18n.get("save_box", lang))
         self.run_button.setText(I18n.get("run_docking", lang))
         self.output_button.setText(I18n.get("browse_button", lang))
@@ -597,11 +686,11 @@ class DockingTab(QWidget):
         for widget in (self.size_x, self.size_y, self.size_z):
             widget.setToolTip(I18n.get("tip_size", lang))
         self.auto_grid_button.setToolTip(I18n.get("tip_center", lang))
-        self.snap_atom_button.setToolTip("Use o átomo do receptor selecionado na árvore como centro da caixa.")
-        self.snap_ligand_button.setToolTip("Carregue um ligante PDBQT de referência e defina o centro no centro geométrico.")
-        self.save_box_button.setToolTip("Salve o centro e o tamanho atuais como predefinição local nomeada.")
-        self.load_box_button.setText("Carregar predefinição...")
-        self.load_box_button.setToolTip("Carregue uma predefinição salva da caixa de busca (arquivo JSON).")
+        self.snap_atom_button.setToolTip(I18n.get("tip_snap_atom", lang))
+        self.snap_ligand_button.setToolTip(I18n.get("tip_snap_ligand", lang))
+        self.save_box_button.setToolTip(I18n.get("tip_save_box", lang))
+        self.load_box_button.setText(I18n.get("load_box_preset", lang))
+        self.load_box_button.setToolTip(I18n.get("tip_load_box", lang))
         self.exhaustiveness.setToolTip(I18n.get("tip_exhaustiveness", lang))
         self.num_modes.setToolTip(I18n.get("tip_num_modes", lang))
         self.energy_range.setToolTip(I18n.get("tip_energy_range", lang))
@@ -627,13 +716,23 @@ class DockingTab(QWidget):
         layout.addWidget(self.scoring_selector)
 
         search_form = QFormLayout(self.search_group)
-        search_form.addRow(self.labels["center_label"], self._xyz_row(self.center_x, self.center_y, self.center_z))
-        search_form.addRow(self.labels["size_label"], self._xyz_row(self.size_x, self.size_y, self.size_z))
-        search_form.addRow("Predefinição de tamanho", self._box_size_preset_row())
+        search_form.addRow(
+            self.labels["center_label"],
+            self._xyz_row(self.center_x, self.center_y, self.center_z),
+        )
+        search_form.addRow(
+            self.labels["size_label"],
+            self._xyz_row(self.size_x, self.size_y, self.size_z),
+        )
+        search_form.addRow(
+            I18n.get("dt_box_size_preset_label", self.lang), self._box_size_preset_row()
+        )
         self.auto_grid_button.clicked.connect(self.fit_grid_to_ligands)
         search_form.addRow(self.auto_grid_button)
         search_form.addRow(self._box_snap_row())
-        search_form.addRow("Predefinições da caixa", self._box_preset_row())
+        search_form.addRow(
+            I18n.get("dt_box_presets_label", self.lang), self._box_preset_row()
+        )
         search_form.addRow(self._build_atom_center_group())
         layout.addWidget(self.search_group)
         layout.addWidget(self._separator())
@@ -672,12 +771,29 @@ class DockingTab(QWidget):
 
     def _box_size_preset_row(self) -> QHBoxLayout:
         """Create size preset controls for common docking boxes."""
-        self.size_preset_combo.addItems(["Personalizado", "Pequena (15x15x15)", "Média (20x20x20)", "Grande (25x25x25)"])
-        self.size_preset_combo.setCurrentText("Média (20x20x20)")
+        self._populate_size_presets()
         self.size_preset_combo.currentTextChanged.connect(self._apply_size_preset)
         row = QHBoxLayout()
         row.addWidget(self.size_preset_combo)
         return row
+
+    def _populate_size_presets(self) -> None:
+        """Fill the size preset combo with i18n-aware labels keyed by stable identifiers."""
+        self.size_preset_combo.blockSignals(True)
+        try:
+            self.size_preset_combo.clear()
+            for key in (
+                "box_preset_custom",
+                "box_preset_small_15",
+                "box_preset_medium_20",
+                "box_preset_large_25",
+            ):
+                self.size_preset_combo.addItem(I18n.get(key, self.lang), userData=key)
+            medium_index = self.size_preset_combo.findData("box_preset_medium_20")
+            if medium_index >= 0:
+                self.size_preset_combo.setCurrentIndex(medium_index)
+        finally:
+            self.size_preset_combo.blockSignals(False)
 
     def _box_snap_row(self) -> QHBoxLayout:
         """Create snap-to-center shortcut buttons."""
@@ -699,7 +815,7 @@ class DockingTab(QWidget):
             QMessageBox.warning(
                 self,
                 I18n.get("warning_title", self.lang),
-                "Selecione ao menos um ligante antes de calcular o blind docking.",
+                I18n.get("dt_blind_need_ligand", self.lang),
             )
             return
 
@@ -710,7 +826,7 @@ class DockingTab(QWidget):
             QMessageBox.warning(
                 self,
                 I18n.get("warning_title", self.lang),
-                "Não foi possível ler coordenadas do(s) ligante(s).",
+                I18n.get("dt_ligand_coords_unreadable", self.lang),
             )
             return
 
@@ -736,7 +852,9 @@ class DockingTab(QWidget):
         QMessageBox.information(
             self,
             I18n.get("success_title", self.lang),
-            f"Blind docking: Rg = {rg:.2f} Å, lado da caixa = {box_side:.2f} Å, centroide ({cx:.3f}, {cy:.3f}, {cz:.3f}).",
+            I18n.get("dt_blind_result", self.lang).format(
+                rg=rg, side=box_side, cx=cx, cy=cy, cz=cz
+            ),
         )
 
     def _box_preset_row(self) -> QHBoxLayout:
@@ -767,17 +885,34 @@ class DockingTab(QWidget):
             self.min_rmsd,
         ]
         for widget in widgets:
-            signal = getattr(widget, "valueChanged", None) or getattr(widget, "selection_changed", None) or getattr(widget, "toggled", None)
-            signal.connect(lambda *_: self.parameters_changed.emit(self.current_parameters()))
+            signal = (
+                getattr(widget, "valueChanged", None)
+                or getattr(widget, "selection_changed", None)
+                or getattr(widget, "toggled", None)
+            )
+            signal.connect(
+                lambda *_: self.parameters_changed.emit(self.current_parameters())
+            )
             signal.connect(lambda *_: self._refresh_pre_run_checklist())
-        for widget in (self.center_x, self.center_y, self.center_z, self.size_x, self.size_y, self.size_z):
-            widget.valueChanged.connect(lambda *_: self.box_changed.emit(self.current_box()))
+        for widget in (
+            self.center_x,
+            self.center_y,
+            self.center_z,
+            self.size_x,
+            self.size_y,
+            self.size_z,
+        ):
+            widget.valueChanged.connect(
+                lambda *_: self.box_changed.emit(self.current_box())
+            )
         self.atom_center_checkbox.toggled.connect(self._atom_center_toggled)
         self.reload_atoms_button.clicked.connect(self._load_receptor_atoms)
         self.atom_tree.itemClicked.connect(self._atom_tree_item_clicked)
         if hasattr(self.setup_provider, "selection_changed"):
             self.setup_provider.selection_changed.connect(self._setup_selection_changed)
-            self.setup_provider.selection_changed.connect(self._refresh_pre_run_checklist)
+            self.setup_provider.selection_changed.connect(
+                self._refresh_pre_run_checklist
+            )
 
     def fit_grid_to_ligands(self) -> None:
         """Set a uniform cubic box size from ligand bounds; do not touch the box center.
@@ -789,7 +924,11 @@ class DockingTab(QWidget):
         ligand_paths = self.setup_provider.ligand_paths()
         bounds = pdbqt_coordinate_bounds(ligand_paths)
         if bounds is None:
-            QMessageBox.warning(self, I18n.get("warning_title", self.lang), I18n.get("auto_grid_failed", self.lang))
+            QMessageBox.warning(
+                self,
+                I18n.get("warning_title", self.lang),
+                I18n.get("auto_grid_failed", self.lang),
+            )
             return
 
         extents = tuple(axis_bounds[1] - axis_bounds[0] for axis_bounds in bounds)
@@ -802,10 +941,8 @@ class DockingTab(QWidget):
         QMessageBox.information(
             self,
             I18n.get("success_title", self.lang),
-            (
-                "Centro da caixa de busca mantido. "
-                f"Maior extensão do ligante: {max(extents):.2f} Å. "
-                f"Lado da caixa (cubo) definido em {cube_side:.2f} Å (maior extensão + 1 Å)."
+            I18n.get("dt_grid_result", self.lang).format(
+                extent=max(extents), side=cube_side
             ),
         )
 
@@ -821,15 +958,16 @@ class DockingTab(QWidget):
         }
 
     def _apply_size_preset(self, label: str) -> None:
-        """Apply common cubic search-box size presets."""
+        """Apply common cubic search-box size presets identified by stable keys."""
+        key = self.size_preset_combo.currentData()
         presets = {
-            "Pequena (15x15x15)": 15.0,
-            "Média (20x20x20)": 20.0,
-            "Grande (25x25x25)": 25.0,
+            "box_preset_small_15": 15.0,
+            "box_preset_medium_20": 20.0,
+            "box_preset_large_25": 25.0,
         }
-        if label not in presets:
+        if key not in presets:
             return
-        value = presets[label]
+        value = presets[key]
         for widget in (self.size_x, self.size_y, self.size_z):
             widget.setValue(value)
         self.box_changed.emit(self.current_box())
@@ -838,13 +976,21 @@ class DockingTab(QWidget):
         """Set the box center from the current receptor atom/residue tree selection."""
         item = self.atom_tree.currentItem()
         if item is None:
-            QMessageBox.information(self, "Centralizar no átomo selecionado", "Selecione primeiro um átomo ou resíduo do receptor.")
+            QMessageBox.information(
+                self,
+                I18n.get("snap_atom_dialog_title", self.lang),
+                I18n.get("snap_atom_dialog_message", self.lang),
+            )
             return
         atom = item.data(0, Qt.UserRole)
         if atom:
-            self._set_center_from_xyz(float(atom["x"]), float(atom["y"]), float(atom["z"]))
+            self._set_center_from_xyz(
+                float(atom["x"]), float(atom["y"]), float(atom["z"])
+            )
             return
-        child_atoms = [item.child(index).data(0, Qt.UserRole) for index in range(item.childCount())]
+        child_atoms = [
+            item.child(index).data(0, Qt.UserRole) for index in range(item.childCount())
+        ]
         child_atoms = [child for child in child_atoms if child]
         if not child_atoms:
             return
@@ -862,12 +1008,21 @@ class DockingTab(QWidget):
         sites where no reference ligand is available, the user must define the
         box center manually (manual XYZ entry, atom snap, or blind docking).
         """
-        file_name, _ = QFileDialog.getOpenFileName(self, "Ligante de referência (co-cristal)", "", "Arquivos PDBQT (*.pdbqt);;Todos os arquivos (*)")
+        file_name, _ = QFileDialog.getOpenFileName(
+            self,
+            I18n.get("dt_ref_ligand_title", self.lang),
+            "",
+            f"{I18n.get('pdbqt_filter', self.lang)};;{I18n.get('all_files', self.lang)}",
+        )
         if not file_name:
             return
         bounds = pdbqt_coordinate_bounds([Path(file_name)])
         if bounds is None:
-            QMessageBox.warning(self, "Ligante cristalográfico", "Não foi possível ler as coordenadas do ligante.")
+            QMessageBox.warning(
+                self,
+                I18n.get("dt_crystal_ligand_title", self.lang),
+                I18n.get("dt_ligand_coords_fail", self.lang),
+            )
             return
         center = tuple((axis_bounds[0] + axis_bounds[1]) / 2 for axis_bounds in bounds)
         self._set_center_from_xyz(center[0], center[1], center[2])
@@ -882,43 +1037,68 @@ class DockingTab(QWidget):
 
     def _save_box_preset(self) -> None:
         """Save the current search box under a user-provided name."""
-        name, ok = QInputDialog.getText(self, "Salvar caixa", "Nome da predefinição")
+        name, ok = QInputDialog.getText(
+            self,
+            I18n.get("dt_save_box_title", self.lang),
+            I18n.get("dt_save_box_prompt", self.lang),
+        )
         if not ok or not name.strip():
             return
         presets = self._read_box_presets()
         presets[name.strip()] = self.current_box()
         self.box_presets_path.parent.mkdir(parents=True, exist_ok=True)
-        self.box_presets_path.write_text(json.dumps(presets, indent=2), encoding="utf-8")
+        self.box_presets_path.write_text(
+            json.dumps(presets, indent=2), encoding="utf-8"
+        )
 
     def _load_box_preset(self) -> None:
         """Load a saved search-box preset from a JSON file via native dialog."""
-        start_dir = str(self.box_presets_path.parent) if self.box_presets_path.parent.exists() else ""
+        start_dir = (
+            str(self.box_presets_path.parent)
+            if self.box_presets_path.parent.exists()
+            else ""
+        )
         file_name, _ = QFileDialog.getOpenFileName(
             self,
-            "Carregar predefinição",
+            I18n.get("load_box_dialog_title", self.lang),
             start_dir,
-            "Predefinições JSON (*.json);;Todos os arquivos (*)",
+            I18n.get("load_box_filter", self.lang),
         )
         if not file_name:
             return
         try:
             data = json.loads(Path(file_name).read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            QMessageBox.warning(self, "Carregar predefinição", f"Falha ao ler arquivo: {exc}")
+            QMessageBox.warning(
+                self,
+                I18n.get("load_box_dialog_title", self.lang),
+                I18n.get("load_box_failed_message", self.lang).format(exc=exc),
+            )
             return
         preset: dict | None = None
-        if isinstance(data, dict) and any(key.startswith("center_") or key.startswith("size_") for key in data):
+        if isinstance(data, dict) and any(
+            key.startswith("center_") or key.startswith("size_") for key in data
+        ):
             preset = data
         elif isinstance(data, dict) and data:
             name, ok = QInputDialog.getItem(
-                self, "Carregar predefinição", "Selecione a predefinição:", sorted(data.keys()), 0, False
+                self,
+                I18n.get("load_box_dialog_title", self.lang),
+                I18n.get("load_box_select_label", self.lang),
+                sorted(data.keys()),
+                0,
+                False,
             )
             if not ok:
                 return
             candidate = data.get(name)
             preset = candidate if isinstance(candidate, dict) else None
         if not preset:
-            QMessageBox.warning(self, "Carregar predefinição", "Arquivo não contém campos de caixa válidos.")
+            QMessageBox.warning(
+                self,
+                I18n.get("load_box_dialog_title", self.lang),
+                I18n.get("load_box_invalid_message", self.lang),
+            )
             return
         for key, widget in {
             "center_x": self.center_x,
@@ -958,51 +1138,135 @@ class DockingTab(QWidget):
             button.setFlat(True)
             button.setToolTip(detail)
             button.setStyleSheet(self._check_style(status))
-            button.clicked.connect(lambda _checked=False, text=detail: QMessageBox.information(self, "Checklist pré-execução", text))
+            button.clicked.connect(
+                lambda _checked=False, text=detail: QMessageBox.information(
+                    self, I18n.get("dt_checklist_dialog_title", self.lang), text
+                )
+            )
             self.checklist_layout.addWidget(button)
 
     def _pre_run_checks(self) -> list[tuple[str, str, str]]:
         """Return status/message/detail rows for the pre-run checklist."""
         checks: list[tuple[str, str, str]] = []
-        receptor = self.setup_provider.rigid_receptor_path() or self.setup_provider.receptor_path()
-        receptor_ok = bool(receptor and is_pdbqt_file(receptor) and pdbqt_coordinate_bounds([receptor]) is not None)
-        checks.append(("ok" if receptor_ok else "fail", "Arquivo do receptor carregado e interpretável", "Selecione um arquivo de receptor .pdbqt válido."))
+        receptor = (
+            self.setup_provider.rigid_receptor_path()
+            or self.setup_provider.receptor_path()
+        )
+        receptor_ok = bool(
+            receptor
+            and is_pdbqt_file(receptor)
+            and pdbqt_coordinate_bounds([receptor]) is not None
+        )
+        checks.append(
+            (
+                "ok" if receptor_ok else "fail",
+                I18n.get("dt_check_receptor_msg", self.lang),
+                I18n.get("dt_check_receptor_detail", self.lang),
+            )
+        )
 
         ligand_paths = self.setup_provider.ligand_paths()
         ligand_bounds = pdbqt_coordinate_bounds(ligand_paths) if ligand_paths else None
         ligand_ok = bool(ligand_paths and ligand_bounds is not None)
-        checks.append(("ok" if ligand_ok else "fail", "Arquivo do ligante carregado e interpretável", "Selecione um arquivo de ligante .pdbqt válido ou uma pasta contendo arquivos .pdbqt."))
+        checks.append(
+            (
+                "ok" if ligand_ok else "fail",
+                I18n.get("dt_check_ligand_msg", self.lang),
+                I18n.get("dt_check_ligand_detail", self.lang),
+            )
+        )
 
         if ligand_bounds is None:
-            checks.append(("fail", "Sobreposição ligante/caixa indisponível", "Carregue as coordenadas do ligante antes de verificar a sobreposição com a grade."))
+            checks.append(
+                (
+                    "fail",
+                    I18n.get("dt_check_overlap_unavailable_msg", self.lang),
+                    I18n.get("dt_check_overlap_unavailable_detail", self.lang),
+                )
+            )
         elif self._bounds_overlap_box(ligand_bounds):
-            checks.append(("ok", "Coordenadas do ligante sobrepõem a caixa de busca", "Os limites do ligante sobrepõem a grade atual do Vina."))
+            checks.append(
+                (
+                    "ok",
+                    I18n.get("dt_check_overlap_ok_msg", self.lang),
+                    I18n.get("dt_check_overlap_ok_detail", self.lang),
+                )
+            )
         else:
-            checks.append(("fail", "Coordenadas do ligante não sobrepõem a caixa de busca", "Mova ou redimensione a caixa de busca para que as coordenadas do ligante sobreponham a grade."))
+            checks.append(
+                (
+                    "fail",
+                    I18n.get("dt_check_overlap_fail_msg", self.lang),
+                    I18n.get("dt_check_overlap_fail_detail", self.lang),
+                )
+            )
 
         obabel_ok = find_obabel_executable() is not None
-        checks.append(("ok" if obabel_ok else "fail", "OpenBabel disponível", "Instale o OpenBabel ou execute o inicializador para reparar o suporte de conversão."))
+        checks.append(
+            (
+                "ok" if obabel_ok else "fail",
+                I18n.get("dt_check_obabel_msg", self.lang),
+                I18n.get("dt_check_obabel_detail", self.lang),
+            )
+        )
 
-        report = EnvironmentManager(Path(__file__).resolve().parents[1]).cached_status_report()
+        report = EnvironmentManager(
+            Path(__file__).resolve().parents[1]
+        ).cached_status_report()
         scoring_statuses = report.get("scoring_functions", {}) if report else {}
         for scoring_key in self.scoring_selector.selected_keys():
-            option = self.scoring_selector._option_for_key(scoring_key)
+            option = self.scoring_selector.option_for_key(scoring_key)
             label = option["label_en"] if option else scoring_key
             if scoring_key in {"vina", "vinardo", "ad4", "gnina"}:
-                unavailable = self.scoring_selector._unavailable_reason(option, self.lang) if option else ""
-                checks.append(("fail" if unavailable else "ok", f"Pontuação {label}", unavailable or "Função de pontuação selecionada disponível."))
+                unavailable = (
+                    self.scoring_selector.unavailable_reason(option, self.lang)
+                    if option
+                    else ""
+                )
+                checks.append(
+                    (
+                        "fail" if unavailable else "ok",
+                        I18n.get("dt_check_scoring_msg", self.lang).format(label=label),
+                        unavailable
+                        or I18n.get("dt_check_scoring_ok_detail", self.lang),
+                    )
+                )
                 continue
             status = scoring_statuses.get(scoring_key, {})
             if status.get("available", False):
-                checks.append(("ok", f"Pontuação {label}", "Função de pontuação selecionada disponível."))
+                checks.append(
+                    (
+                        "ok",
+                        I18n.get("dt_check_scoring_msg", self.lang).format(label=label),
+                        I18n.get("dt_check_scoring_ok_detail", self.lang),
+                    )
+                )
             else:
-                checks.append(("warn", f"Pontuação {label} desativada", status.get("reason", "Dependência opcional de pontuação ausente.")))
+                checks.append(
+                    (
+                        "warn",
+                        I18n.get("dt_check_scoring_disabled_msg", self.lang).format(
+                            label=label
+                        ),
+                        status.get("reason")
+                        or I18n.get("dt_scoring_dep_missing", self.lang),
+                    )
+                )
 
         vina_ok = bool(report.get("vina_functional", False)) if report else True
-        checks.append(("ok" if vina_ok else "fail", "Executável Vina encontrado", "Execute o inicializador para instalar o Vina ou restaurar o fallback CLI incluído."))
+        checks.append(
+            (
+                "ok" if vina_ok else "fail",
+                I18n.get("dt_check_vina_msg", self.lang),
+                I18n.get("dt_check_vina_detail", self.lang),
+            )
+        )
         return checks
 
-    def _bounds_overlap_box(self, bounds: tuple[tuple[float, float], tuple[float, float], tuple[float, float]]) -> bool:
+    def _bounds_overlap_box(
+        self,
+        bounds: tuple[tuple[float, float], tuple[float, float], tuple[float, float]],
+    ) -> bool:
         """Return True when ligand coordinate bounds overlap the current search box."""
         center = (self.center_x.value(), self.center_y.value(), self.center_z.value())
         size = (self.size_x.value(), self.size_y.value(), self.size_z.value())
@@ -1062,14 +1326,19 @@ class DockingTab(QWidget):
     def _load_receptor_atoms(self) -> None:
         """Populate the receptor residue/atom tree from the selected PDBQT."""
         self.atom_tree.clear()
-        receptor_path = self.setup_provider.rigid_receptor_path() or self.setup_provider.receptor_path()
+        receptor_path = (
+            self.setup_provider.rigid_receptor_path()
+            or self.setup_provider.receptor_path()
+        )
         if receptor_path is None or not receptor_path.exists():
-            self.atom_status_label.setText("Selecione primeiro um arquivo PDBQT do receptor.")
+            self.atom_status_label.setText(
+                I18n.get("dt_select_receptor_first", self.lang)
+            )
             return
 
         atoms = pdbqt_receptor_atoms(receptor_path)
         if not atoms:
-            self.atom_status_label.setText("Nenhum átomo do receptor pôde ser lido do arquivo PDBQT.")
+            self.atom_status_label.setText(I18n.get("dt_no_receptor_atoms", self.lang))
             return
 
         residue_items: dict[tuple[str, str, str], QTreeWidgetItem] = {}
@@ -1098,7 +1367,9 @@ class DockingTab(QWidget):
         for column in range(self.atom_tree.columnCount()):
             self.atom_tree.resizeColumnToContents(column)
         self.atom_status_label.setText(
-            f"Carregados {len(atoms)} átomos em {len(residue_items)} resíduos de {receptor_path.name}."
+            I18n.get("dt_atoms_loaded", self.lang).format(
+                count=len(atoms), residues=len(residue_items), name=receptor_path.name
+            )
         )
 
     def _atom_tree_item_clicked(self, item: QTreeWidgetItem, column: int) -> None:
@@ -1110,18 +1381,29 @@ class DockingTab(QWidget):
         self.center_y.setValue(float(atom["y"]))
         self.center_z.setValue(float(atom["z"]))
         self.atom_status_label.setText(
-            f"Centro definido para {atom['resname']} {atom['chain_id']}{atom['residue_number']} "
-            f"{atom['atom_name']} ({atom['x']:.3f}, {atom['y']:.3f}, {atom['z']:.3f})."
+            I18n.get("dt_center_set", self.lang).format(
+                res=atom["resname"],
+                chain=atom["chain_id"],
+                num=atom["residue_number"],
+                atom=atom["atom_name"],
+                x=atom["x"],
+                y=atom["y"],
+                z=atom["z"],
+            )
         )
         self.parameters_changed.emit(self.current_parameters())
         self.box_changed.emit(self.current_box())
 
     def _refresh_dependency_status(self) -> None:
         """Show a compact dependency readiness indicator in the docking panel."""
-        report = EnvironmentManager(Path(__file__).resolve().parents[1]).cached_status_report()
+        report = EnvironmentManager(
+            Path(__file__).resolve().parents[1]
+        ).cached_status_report()
         if not report:
-            self.dependency_status_label.setText("Dependências: verificando - execute o inicializador se um pacote obrigatório estiver ausente.")
-            self.dependency_status_label.setStyleSheet("color: #8a5a00; font-weight: 600;")
+            self.dependency_status_label.setText(I18n.get("dt_dep_checking", self.lang))
+            self.dependency_status_label.setStyleSheet(
+                "color: #8a5a00; font-weight: 600;"
+            )
             return
         missing_required = [
             package["pip_name"]
@@ -1133,39 +1415,51 @@ class DockingTab(QWidget):
             for key, status in report.get("scoring_functions", {}).items()
             if not status.get("available", False)
         ]
-        if not report.get("venv_ready") or missing_required or not report.get("vina_functional", False):
-            self.dependency_status_label.setText("Dependências: vermelho - runtime obrigatório ausente. Use Corrigir agora na barra de status.")
-            self.dependency_status_label.setStyleSheet("color: #9b1c1c; font-weight: 600;")
+        if (
+            not report.get("venv_ready")
+            or missing_required
+            or not report.get("vina_functional", False)
+        ):
+            self.dependency_status_label.setText(I18n.get("dt_dep_red", self.lang))
+            self.dependency_status_label.setStyleSheet(
+                "color: #9b1c1c; font-weight: 600;"
+            )
         elif disabled_scorers:
             self.dependency_status_label.setText(
-                "Dependências: amarelo - docking principal pronto; pontuação desativada: " + ", ".join(disabled_scorers)
+                I18n.get("dt_dep_yellow", self.lang) + ", ".join(disabled_scorers)
             )
-            self.dependency_status_label.setStyleSheet("color: #8a5a00; font-weight: 600;")
+            self.dependency_status_label.setStyleSheet(
+                "color: #8a5a00; font-weight: 600;"
+            )
         else:
-            self.dependency_status_label.setText("Dependências: verde - docking e runtimes opcionais de pontuação prontos.")
-            self.dependency_status_label.setStyleSheet("color: #1f6b3a; font-weight: 600;")
+            self.dependency_status_label.setText(I18n.get("dt_dep_green", self.lang))
+            self.dependency_status_label.setStyleSheet(
+                "color: #1f6b3a; font-weight: 600;"
+            )
 
     def _set_parameter_explanations(self) -> None:
-        """Attach short explanations to every AutoDock Vina parameter."""
+        """Attach i18n-resolved explanations to every AutoDock Vina parameter label."""
         explanations = {
-            "scoring_label": "Escolha uma ou mais funções de pontuação; cada método selecionado roda como validação separada.",
-            "center_label": "Centro da caixa de busca; use coordenadas conhecidas do sítio ativo ou selecione um átomo do receptor abaixo.",
-            "size_label": "Dimensões da caixa em Angstrom; caixas grandes são mais lentas e menos focadas.",
-            "exhaustiveness": "Esforço de busca; valores maiores amostram mais poses e levam mais tempo.",
-            "num_modes": "Número máximo de poses gravadas por ligante e função de pontuação.",
-            "energy_range": "Mantém poses dentro desta janela de kcal/mol em relação à melhor pose.",
-            "cpu_label": "Número de threads de CPU; 0 permite que o Vina escolha automaticamente.",
-            "seed_label": "Semente aleatória usada quando a reprodutibilidade está habilitada.",
-            "min_rmsd": "Separação mínima de poses usada para evitar poses quase duplicadas.",
-            "output_dir": "Pasta onde poses, tabelas de resultados e relatórios serão gravados.",
+            "scoring_label": "tip_scoring",
+            "center_label": "tip_center",
+            "size_label": "tip_size",
+            "exhaustiveness": "tip_exhaustiveness",
+            "num_modes": "tip_num_modes",
+            "energy_range": "tip_energy_range",
+            "cpu_label": "tip_cpu",
+            "seed_label": "tip_seed",
+            "min_rmsd": "tip_min_rmsd",
+            "output_dir": "tip_output",
         }
-        for key, text in explanations.items():
-            self.labels[key].setToolTip(text)
+        for label_key, tooltip_key in explanations.items():
+            self.labels[label_key].setToolTip(I18n.get(tooltip_key, self.lang))
 
     def _apply_config_values(self, values: dict[str, str]) -> None:
         """Apply parsed config key/value pairs to controls."""
         if "scoring" in values:
-            scoring_keys = [key.strip() for key in values["scoring"].split(",") if key.strip()]
+            scoring_keys = [
+                key.strip() for key in values["scoring"].split(",") if key.strip()
+            ]
             self.scoring_selector.set_selected_keys(scoring_keys)
         for key, widget in {
             "center_x": self.center_x,
@@ -1196,7 +1490,9 @@ class DockingTab(QWidget):
 
     def _pick_output_directory(self) -> None:
         """Pick the output directory for docking results."""
-        folder = QFileDialog.getExistingDirectory(self, I18n.get("select_output_dir", self.lang))
+        folder = QFileDialog.getExistingDirectory(
+            self, I18n.get("select_output_dir", self.lang)
+        )
         if folder:
             output_directory = Path(folder)
             self.output_edit.setText(str(output_directory))
@@ -1237,7 +1533,9 @@ class DockingTab(QWidget):
     def _xyz_row(x_widget, y_widget, z_widget) -> QGridLayout:
         """Create a compact X/Y/Z spinbox row."""
         row = QGridLayout()
-        for column, (label, widget) in enumerate((("X", x_widget), ("Y", y_widget), ("Z", z_widget))):
+        for column, (label, widget) in enumerate(
+            (("X", x_widget), ("Y", y_widget), ("Z", z_widget))
+        ):
             axis_label = QLabel(label)
             axis_label.setObjectName("label_muted")
             row.addWidget(axis_label, 0, column * 2)
@@ -1245,7 +1543,9 @@ class DockingTab(QWidget):
         return row
 
     @staticmethod
-    def _double_spin(minimum: float, maximum: float, step: float, decimals: int, value: float) -> QDoubleSpinBox:
+    def _double_spin(
+        minimum: float, maximum: float, step: float, decimals: int, value: float
+    ) -> QDoubleSpinBox:
         """Create a configured QDoubleSpinBox."""
         spin = QDoubleSpinBox()
         spin.setRange(minimum, maximum)
@@ -1272,4 +1572,11 @@ def _gnina_executable() -> Path | None:
         Path(__file__).resolve().parents[1] / "tools" / "gnina" / "gnina.exe",
         Path.cwd() / "tools" / "gnina" / "gnina.exe",
     ]
-    return next((candidate for candidate in candidates if candidate.exists() and candidate.is_file()), None)
+    return next(
+        (
+            candidate
+            for candidate in candidates
+            if candidate.exists() and candidate.is_file()
+        ),
+        None,
+    )

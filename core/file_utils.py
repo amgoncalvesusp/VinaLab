@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """File and PDBQT validation helpers for VinaLab."""
 
 from collections import Counter
@@ -124,7 +125,9 @@ class PdbqtLigandIntegrity:
 
 def is_pdbqt_file(path: Path | None) -> bool:
     """Return True when path exists and points to a PDBQT file."""
-    return bool(path and path.exists() and path.is_file() and path.suffix.lower() == ".pdbqt")
+    return bool(
+        path and path.exists() and path.is_file() and path.suffix.lower() == ".pdbqt"
+    )
 
 
 def validate_optional_pdbqt(path: Path | None) -> bool:
@@ -141,7 +144,9 @@ def discover_pdbqt_files(folder: Path | None) -> list[Path]:
 
 def safe_stem(path: Path) -> str:
     """Return a filesystem-safe stem for generated output files."""
-    cleaned = "".join(char if char.isalnum() or char in ("-", "_") else "_" for char in path.stem)
+    cleaned = "".join(
+        char if char.isalnum() or char in ("-", "_") else "_" for char in path.stem
+    )
     return cleaned or "ligand"
 
 
@@ -151,7 +156,9 @@ def ensure_directory(path: Path) -> Path:
     return path.resolve()
 
 
-def pdbqt_coordinate_bounds(paths: list[Path]) -> tuple[tuple[float, float], ...] | None:
+def pdbqt_coordinate_bounds(
+    paths: list[Path],
+) -> tuple[tuple[float, float], ...] | None:
     """Return min/max X, Y, Z bounds across one or more PDBQT files."""
     coordinates: list[tuple[float, float, float]] = []
     for path in paths:
@@ -164,11 +171,15 @@ def pdbqt_coordinate_bounds(paths: list[Path]) -> tuple[tuple[float, float], ...
 def pdbqt_coordinates(path: Path) -> list[tuple[float, float, float]]:
     """Parse atom coordinates from a PDBQT file."""
     coordinates: list[tuple[float, float, float]] = []
-    for line in clean_pdbqt_text(path.read_text(encoding="utf-8", errors="replace")).splitlines():
+    for line in clean_pdbqt_text(
+        path.read_text(encoding="utf-8", errors="replace")
+    ).splitlines():
         if not line.startswith(("ATOM", "HETATM")):
             continue
         try:
-            coordinates.append((float(line[30:38]), float(line[38:46]), float(line[46:54])))
+            coordinates.append(
+                (float(line[30:38]), float(line[38:46]), float(line[46:54]))
+            )
         except ValueError:
             parts = line.split()
             try:
@@ -181,7 +192,9 @@ def pdbqt_coordinates(path: Path) -> list[tuple[float, float, float]]:
 def pdbqt_receptor_atoms(path: Path) -> list[dict]:
     """Parse receptor atoms grouped by residue metadata from a PDBQT file."""
     atoms: list[dict] = []
-    for line in clean_pdbqt_text(path.read_text(encoding="utf-8", errors="replace")).splitlines():
+    for line in clean_pdbqt_text(
+        path.read_text(encoding="utf-8", errors="replace")
+    ).splitlines():
         if not line.startswith(("ATOM", "HETATM")):
             continue
         try:
@@ -347,7 +360,9 @@ def _pdbqt_atom_for_integrity(line: str) -> dict | None:
     }
 
 
-def _component_sizes(atoms: list[dict], forced_bonds: set[tuple[int, int]]) -> list[int]:
+def _component_sizes(
+    atoms: list[dict], forced_bonds: set[tuple[int, int]]
+) -> list[int]:
     """Return connected-component sizes using BRANCH bonds plus conservative distance bonds."""
     if not atoms:
         return []
@@ -392,13 +407,19 @@ def _atoms_likely_connected(left_atom: dict, right_atom: dict) -> bool:
     distance = (dx * dx + dy * dy + dz * dz) ** 0.5
     if distance < 0.35:
         return False
-    threshold = _covalent_radius(left_atom["element"]) + _covalent_radius(right_atom["element"]) + 0.45
+    threshold = (
+        _covalent_radius(left_atom["element"])
+        + _covalent_radius(right_atom["element"])
+        + 0.45
+    )
     return distance <= min(threshold, 2.25)
 
 
 def _autodock_type_to_element(atom_name: str, atom_type: str) -> str:
     """Convert AutoDock atom types to chemical elements for validation."""
-    token = "".join(character for character in atom_type.strip() if character.isalpha()).upper()
+    token = "".join(
+        character for character in atom_type.strip() if character.isalpha()
+    ).upper()
     if token == "A":
         return "C"
     if token.startswith("CL"):
@@ -417,7 +438,9 @@ def _autodock_type_to_element(atom_name: str, atom_type: str) -> str:
         return token[:2].title()
     if token:
         return token[0].upper()
-    letters = "".join(character for character in atom_name if character.isalpha()).upper()
+    letters = "".join(
+        character for character in atom_name if character.isalpha()
+    ).upper()
     return letters[:1] if letters else "C"
 
 
@@ -460,12 +483,38 @@ def _pdbqt_atom_type_token(line: str) -> str:
     return parts[-1] if parts else ""
 
 
+def _pdbqt_charge_value(line: str) -> float | None:
+    """Return the partial charge of a PDBQT ATOM/HETATM line, or None when absent.
+
+    Reads the second-to-last whitespace token first (the layout meeko/Vina emit
+    and the one the in-place charge-repair routine reconstructs), then falls back
+    to the fixed-width charge columns 67-76. The fixed-width fallback rescues
+    lines where a large negative coordinate collides with an adjacent field and
+    breaks naive whitespace splitting. Returns None only when neither source
+    yields a float.
+    """
+    token = _pdbqt_charge_token(line)
+    if token:
+        try:
+            return float(token)
+        except ValueError:
+            pass
+    fixed_width = line[66:76].strip()
+    if fixed_width:
+        try:
+            return float(fixed_width)
+        except ValueError:
+            pass
+    return None
+
+
 def validate_pdbqt_charges(filepath: Path) -> bool:
     """Return True when every ATOM/HETATM line in `filepath` has a parseable float charge.
 
-    Pre-flight check called before handing a PDBQT to the Vina CLI. Empty token,
-    non-numeric token (e.g., a stray atom type or chain ID slid into column 9),
-    or a missing column counts as failure.
+    Pre-flight check called before handing a PDBQT to the Vina CLI. A line counts
+    as failing when neither the whitespace charge token nor the fixed-width charge
+    columns yield a float (empty column, or a stray atom type / chain id slid into
+    the charge field).
     """
     try:
         text = clean_pdbqt_text(filepath.read_text(encoding="utf-8", errors="replace"))
@@ -474,12 +523,7 @@ def validate_pdbqt_charges(filepath: Path) -> bool:
     for line in text.splitlines():
         if not line.startswith(("ATOM", "HETATM")):
             continue
-        charge_token = _pdbqt_charge_token(line)
-        if not charge_token:
-            return False
-        try:
-            float(charge_token)
-        except ValueError:
+        if _pdbqt_charge_value(line) is None:
             return False
     return True
 
@@ -525,7 +569,9 @@ def repair_pdbqt_charges(filepath: Path, role: str = "ligand") -> bool:
     if role not in RECEPTOR_ROLES:
         ligand_repaired = _rewrite_ligand_charges_with_rdkit(filepath, repaired_lines)
         if ligand_repaired is None:
-            ligand_repaired = _rewrite_ligand_charges_with_obabel(filepath, repaired_lines)
+            ligand_repaired = _rewrite_ligand_charges_with_obabel(
+                filepath, repaired_lines
+            )
         if ligand_repaired is not None:
             repaired_lines = ligand_repaired
 
@@ -533,7 +579,9 @@ def repair_pdbqt_charges(filepath: Path, role: str = "ligand") -> bool:
     return validate_pdbqt_charges(filepath)
 
 
-def _rewrite_ligand_charges_with_rdkit(filepath: Path, current_lines: list[str]) -> list[str] | None:
+def _rewrite_ligand_charges_with_rdkit(
+    filepath: Path, current_lines: list[str]
+) -> list[str] | None:
     """Compute Gasteiger charges via RDKit and rewrite PDBQT charge columns.
 
     PDBQT files keep AutoDock atom-type tokens (e.g., HD, OA, NA) in the last
@@ -604,7 +652,9 @@ def _rewrite_ligand_charges_with_rdkit(filepath: Path, current_lines: list[str])
             pass
 
     atom_indices = [
-        index for index, line in enumerate(current_lines) if line.startswith(("ATOM", "HETATM"))
+        index
+        for index, line in enumerate(current_lines)
+        if line.startswith(("ATOM", "HETATM"))
     ]
     if len(atom_indices) != len(charges):
         return None
@@ -623,7 +673,9 @@ def _rewrite_ligand_charges_with_rdkit(filepath: Path, current_lines: list[str])
     return updated
 
 
-def _rewrite_ligand_charges_with_obabel(filepath: Path, current_lines: list[str]) -> list[str] | None:
+def _rewrite_ligand_charges_with_obabel(
+    filepath: Path, current_lines: list[str]
+) -> list[str] | None:
     """Open Babel fallback: regenerate PDBQT and copy its charges into current lines."""
     import shutil
     import subprocess
@@ -645,7 +697,14 @@ def _rewrite_ligand_charges_with_obabel(filepath: Path, current_lines: list[str]
         regen_path = Path(handle.name)
     try:
         completed = subprocess.run(
-            [obabel, str(filepath), "-O", str(regen_path), "--partialcharge", "gasteiger"],
+            [
+                obabel,
+                str(filepath),
+                "-O",
+                str(regen_path),
+                "--partialcharge",
+                "gasteiger",
+            ],
             capture_output=True,
             text=True,
             check=False,
@@ -662,9 +721,13 @@ def _rewrite_ligand_charges_with_obabel(filepath: Path, current_lines: list[str]
         except OSError:
             pass
 
-    regen_atom_lines = [line for line in regen_lines if line.startswith(("ATOM", "HETATM"))]
+    regen_atom_lines = [
+        line for line in regen_lines if line.startswith(("ATOM", "HETATM"))
+    ]
     original_atom_indices = [
-        index for index, line in enumerate(current_lines) if line.startswith(("ATOM", "HETATM"))
+        index
+        for index, line in enumerate(current_lines)
+        if line.startswith(("ATOM", "HETATM"))
     ]
     if len(regen_atom_lines) != len(original_atom_indices):
         return None
@@ -688,7 +751,9 @@ def _rewrite_ligand_charges_with_obabel(filepath: Path, current_lines: list[str]
     return updated
 
 
-def sanitize_pdbqt_for_vina(input_path: Path, output_directory: Path, role: str) -> PdbqtSanitizationResult:
+def sanitize_pdbqt_for_vina(
+    input_path: Path, output_directory: Path, role: str
+) -> PdbqtSanitizationResult:
     """Return a Vina-compatible PDBQT path, removing unsupported PDB records if needed."""
     removed_tags: Counter[str] = Counter()
     normalized_types: Counter[str] = Counter()
@@ -717,7 +782,9 @@ def sanitize_pdbqt_for_vina(input_path: Path, output_directory: Path, role: str)
             removed_tags[tag] += 1
 
     if not removed_tags and not normalized_types:
-        return PdbqtSanitizationResult(path=input_path, changed=False, removed_counts={}, normalized_counts={})
+        return PdbqtSanitizationResult(
+            path=input_path, changed=False, removed_counts={}, normalized_counts={}
+        )
 
     sanitized_dir = output_directory / "sanitized_inputs"
     sanitized_dir.mkdir(parents=True, exist_ok=True)
@@ -742,7 +809,10 @@ def _normalize_autodock_type(line: str) -> tuple[str, str | None]:
         return line, None
     start = line.rfind(atom_type)
     if start >= 0:
-        return f"{line[:start]}{normalized:<{len(atom_type)}}{line[start + len(atom_type):]}", atom_type
+        return (
+            f"{line[:start]}{normalized:<{len(atom_type)}}{line[start + len(atom_type) :]}",
+            atom_type,
+        )
     return f"{prefix} {normalized}", atom_type
 
 
@@ -755,7 +825,9 @@ def _valid_autodock_type(atom_type: str) -> str | None:
 
 def _infer_type_from_token(atom_type: str) -> str | None:
     """Infer a basic AutoDock atom type from common PDB element annotations."""
-    letters = "".join(character for character in atom_type if character.isalpha()).upper()
+    letters = "".join(
+        character for character in atom_type if character.isalpha()
+    ).upper()
     if not letters:
         return None
     if letters.startswith("CL"):

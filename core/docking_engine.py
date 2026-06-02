@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Threaded AutoDock Vina docking engine for VinaLab."""
 
 import csv
@@ -8,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import traceback
+import zipfile
 
 from PySide6.QtCore import QThread, Signal
 
@@ -55,7 +57,9 @@ NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0
 
 try:
     from vina import Vina
-except ImportError:  # pragma: no cover - handled at runtime for missing optional dependency
+except (
+    ImportError
+):  # pragma: no cover - handled at runtime for missing optional dependency
     Vina = None
 
 
@@ -119,7 +123,9 @@ def extract_pose_model(output_file: Path, mode: int, include_model: bool = True)
     for line in lines:
         if line.startswith("MODEL"):
             parts = line.split()
-            current_mode = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None
+            current_mode = (
+                int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None
+            )
             inside_block = current_mode == mode
             block_lines = [line] if inside_block and include_model else []
             continue
@@ -139,7 +145,9 @@ def find_obabel_executable() -> str | None:
     obabel = shutil.which("obabel")
     if obabel:
         return obabel
-    candidate = Path(sys.executable).resolve().parent / ("obabel.exe" if sys.platform.startswith("win") else "obabel")
+    candidate = Path(sys.executable).resolve().parent / (
+        "obabel.exe" if sys.platform.startswith("win") else "obabel"
+    )
     return str(candidate) if candidate.exists() else None
 
 
@@ -156,7 +164,11 @@ def convert_with_obabel(input_path: Path, output_path: Path) -> Path:
         creationflags=NO_WINDOW,
     )
     if completed.returncode != 0:
-        message = completed.stderr.strip() or completed.stdout.strip() or "Falha na conversão com OpenBabel."
+        message = (
+            completed.stderr.strip()
+            or completed.stdout.strip()
+            or "Falha na conversão com OpenBabel."
+        )
         raise RuntimeError(message)
     return output_path
 
@@ -165,7 +177,9 @@ def os_environ_with_pythonpath(extra_path: str) -> dict[str, str]:
     """Return an environment dict extended with an extra PYTHONPATH entry."""
     env = dict(os.environ)
     current = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = extra_path if not current else os.pathsep.join([extra_path, current])
+    env["PYTHONPATH"] = (
+        extra_path if not current else os.pathsep.join([extra_path, current])
+    )
     return env
 
 
@@ -195,7 +209,9 @@ class DockingWorker(QThread):
         self.ligand_display_names: dict[Path, str] = {}
         self.output_directory = output_directory
         self.parameters = dict(parameters)
-        self._scoring_archives = {item["key"]: item for item in discover_external_scoring_functions()}
+        self._scoring_archives = {
+            item["key"]: item for item in discover_external_scoring_functions()
+        }
         self._scoring_extract_dirs: dict[str, Path] = {}
 
     def run(self) -> None:
@@ -208,14 +224,22 @@ class DockingWorker(QThread):
             )
             return
         vina_cli = self._vina_cli_path()
-        if any(scoring_key != "gnina" for scoring_key in selected_scoring) and Vina is None and vina_cli is None:
-            self.error_signal.emit("O pacote Python vina não está instalado e nenhum fallback Vina CLI incluído foi encontrado.")
+        if (
+            any(scoring_key != "gnina" for scoring_key in selected_scoring)
+            and Vina is None
+            and vina_cli is None
+        ):
+            self.error_signal.emit(
+                "O pacote Python vina não está instalado e nenhum fallback Vina CLI incluído foi encontrado."
+            )
             return
 
         try:
             ensure_directory(self.output_directory)
         except OSError as exc:
-            self.error_signal.emit(f"Não foi possível criar o diretório de saída: {exc}")
+            self.error_signal.emit(
+                f"Não foi possível criar o diretório de saída: {exc}"
+            )
             return
 
         if not self.ligand_paths:
@@ -225,14 +249,18 @@ class DockingWorker(QThread):
         try:
             self._prepare_pdbqt_inputs()
         except Exception as exc:  # noqa: BLE001 - input preparation errors must be shown in the GUI
-            self.error_signal.emit(f"Não foi possível preparar as entradas PDBQT: {exc}")
+            self.error_signal.emit(
+                f"Não foi possível preparar as entradas PDBQT: {exc}"
+            )
             return
 
         total = len(self.ligand_paths)
         all_results: list[dict] = []
         total_jobs = total * len(selected_scoring)
         completed_jobs = 0
-        self.log_signal.emit(f"Iniciando docking para {total} ligante(s) com {len(selected_scoring)} função(ões) de pontuação.")
+        self.log_signal.emit(
+            f"Iniciando docking para {total} ligante(s) com {len(selected_scoring)} função(ões) de pontuação."
+        )
 
         for index, ligand_path in enumerate(self.ligand_paths, start=1):
             for scoring_key in selected_scoring:
@@ -240,7 +268,9 @@ class DockingWorker(QThread):
                     grid_warning = self._validate_ligand_inside_grid(ligand_path)
                     if grid_warning:
                         self.log_signal.emit(f"AVISO {grid_warning}")
-                    ligand_results = self._run_ligand_with_scoring(ligand_path, scoring_key, gnina_cli, vina_cli)
+                    ligand_results = self._run_ligand_with_scoring(
+                        ligand_path, scoring_key, gnina_cli, vina_cli
+                    )
                     all_results.extend(ligand_results)
                     self.result_signal.emit(ligand_results)
                     self.log_signal.emit(
@@ -248,13 +278,17 @@ class DockingWorker(QThread):
                         f"{len(ligand_results)} pose(s)."
                     )
                 except Exception as exc:  # noqa: BLE001 - per-ligand/scorer failures must not stop the batch
-                    self.log_signal.emit(f"ERRO no docking de {ligand_path.name} com {self._scoring_label(scoring_key)}: {exc}")
+                    self.log_signal.emit(
+                        f"ERRO no docking de {ligand_path.name} com {self._scoring_label(scoring_key)}: {exc}"
+                    )
                     self.log_signal.emit(traceback.format_exc())
                 finally:
                     completed_jobs += 1
                     self.progress_signal.emit(int(completed_jobs / total_jobs * 100))
 
-        self.log_signal.emit(f"Docking finalizado. {len(all_results)} pose(s) interpretada(s).")
+        self.log_signal.emit(
+            f"Docking finalizado. {len(all_results)} pose(s) interpretada(s)."
+        )
 
     def _selected_scoring_functions(self) -> list[str]:
         """Return scoring functions requested by the GUI."""
@@ -272,7 +306,10 @@ class DockingWorker(QThread):
     ) -> list[dict]:
         """Dock or score one ligand with one selected scoring function."""
         previous_parameters = dict(self.parameters)
-        label, vina_sf_name = self._scoring_label(scoring_key), self._vina_sf_name(scoring_key)
+        label, vina_sf_name = (
+            self._scoring_label(scoring_key),
+            self._vina_sf_name(scoring_key),
+        )
         self.parameters = {
             **previous_parameters,
             "scoring_function": scoring_key,
@@ -284,14 +321,24 @@ class DockingWorker(QThread):
                     raise RuntimeError("O executável GNINA não está disponível.")
                 rows = self._dock_single_ligand_gnina(ligand_path, gnina_cli)
             elif scoring_key in VINA_SCORING_NAMES:
-                rows = self._dock_single_ligand(ligand_path) if Vina is not None else self._dock_single_ligand_cli(ligand_path, vina_cli)
+                rows = (
+                    self._dock_single_ligand(ligand_path)
+                    if Vina is not None
+                    else self._dock_single_ligand_cli(ligand_path, vina_cli)
+                )
             else:
-                rows = self._dock_single_ligand(ligand_path) if Vina is not None else self._dock_single_ligand_cli(ligand_path, vina_cli)
+                rows = (
+                    self._dock_single_ligand(ligand_path)
+                    if Vina is not None
+                    else self._dock_single_ligand_cli(ligand_path, vina_cli)
+                )
                 try:
                     self._run_external_scoring(scoring_key, rows)
                 except Exception as exc:  # noqa: BLE001 - keep docked poses visible even when rescoring dependencies fail
                     message = f"{type(exc).__name__}: {exc}"
-                    self.log_signal.emit(f"ERRO ao pontuar poses geradas com {label}: {message}")
+                    self.log_signal.emit(
+                        f"ERRO ao pontuar poses geradas com {label}: {message}"
+                    )
                     self.log_signal.emit(traceback.format_exc())
                     for row in rows:
                         row["vina_affinity"] = row["affinity"]
@@ -300,12 +347,16 @@ class DockingWorker(QThread):
             for row in rows:
                 row["scoring_function"] = label
                 row["scoring_key"] = scoring_key
-                row["receptor_file"] = str(self.rigid_receptor_path or self.receptor_path)
+                row["receptor_file"] = str(
+                    self.rigid_receptor_path or self.receptor_path
+                )
             return rows
         finally:
             self.parameters = previous_parameters
 
-    def _run_external_scoring(self, scoring_key: str, ligand_results: list[dict]) -> None:
+    def _run_external_scoring(
+        self, scoring_key: str, ligand_results: list[dict]
+    ) -> None:
         """Run an external scoring function selected in the docking scoring list."""
         if not ligand_results:
             return
@@ -322,10 +373,14 @@ class DockingWorker(QThread):
                 row["external_score"] = ""
         self.log_signal.emit(f"Repontuação concluída com {scorer_label}.")
 
-    def _score_ligand_results(self, scoring_key: str, ligand_results: list[dict]) -> dict[int, float]:
+    def _score_ligand_results(
+        self, scoring_key: str, ligand_results: list[dict]
+    ) -> dict[int, float]:
         """Run one bundled scoring package for all poses of a single ligand."""
         if scoring_key == "deltavina_rf20":
-            raise RuntimeError("DeltaVinaRF20 bundle requires its original Python 2/R runtime and cannot run in this environment.")
+            raise RuntimeError(
+                "DeltaVinaRF20 bundle requires its original Python 2/R runtime and cannot run in this environment."
+            )
         if scoring_key == "delta_vina_xgb":
             return self._run_delta_vina_xgb(ligand_results)
         if scoring_key == "rtmscore":
@@ -350,7 +405,9 @@ class DockingWorker(QThread):
         """Run DeltaVinaXGB-Light over all poses for one ligand."""
         working_dir = Path(tempfile.mkdtemp(prefix="vinalab_dxgb_"))
         archive_root = self._extract_scoring_archive("delta_vina_xgb")
-        score_rows = self._prepare_scoring_inputs(ligand_results, working_dir, ligand_format="mol2")
+        score_rows = self._prepare_scoring_inputs(
+            ligand_results, working_dir, ligand_format="mol2"
+        )
         model_dir = archive_root / "deltaVinaXGB-Light" / "Model"
         script_path = archive_root / "deltaVinaXGB-Light" / "DXGB" / "run_DXGB.py"
         try:
@@ -382,14 +439,27 @@ class DockingWorker(QThread):
                 creationflags=NO_WINDOW,
             )
             if completed.returncode != 0:
-                message = completed.stderr.strip() or completed.stdout.strip() or "DeltaVinaXGB-Light failed."
+                message = (
+                    completed.stderr.strip()
+                    or completed.stdout.strip()
+                    or "DeltaVinaXGB-Light failed."
+                )
                 raise RuntimeError(message)
             scores: dict[int, float] = {}
-            with output_file.open(encoding="utf-8", errors="replace", newline="") as handle:
+            with output_file.open(
+                encoding="utf-8", errors="replace", newline=""
+            ) as handle:
                 reader = csv.DictReader(handle)
                 for csv_row in reader:
                     pose_id = csv_row.get("pdb", "")
-                    mode = next((item["mode"] for item in score_rows if item["pose_id"] == pose_id), None)
+                    mode = next(
+                        (
+                            item["mode"]
+                            for item in score_rows
+                            if item["pose_id"] == pose_id
+                        ),
+                        None,
+                    )
                     score_value = csv_row.get("XGB")
                     if mode is not None and score_value not in {None, ""}:
                         scores[mode] = float(score_value)
@@ -403,16 +473,22 @@ class DockingWorker(QThread):
             __import__(module_name)
         working_dir = Path(tempfile.mkdtemp(prefix="vinalab_rtmscore_"))
         archive_root = self._extract_scoring_archive("rtmscore")
-        score_rows = self._prepare_scoring_inputs(ligand_results, working_dir, ligand_format="mol2")
+        score_rows = self._prepare_scoring_inputs(
+            ligand_results, working_dir, ligand_format="mol2"
+        )
         receptor_target = working_dir / "receptor.pdb"
         ligand_target = working_dir / "poses.mol2"
-        model_path = archive_root / "RTMScore-main" / "trained_models" / "rtmscore_model1.pth"
+        model_path = (
+            archive_root / "RTMScore-main" / "trained_models" / "rtmscore_model1.pth"
+        )
         script_path = archive_root / "RTMScore-main" / "example" / "rtmscore.py"
         try:
             shutil.copy2(score_rows[0]["receptor_pdb"], receptor_target)
             with ligand_target.open("w", encoding="utf-8") as handle:
                 for row in score_rows:
-                    ligand_text = row["ligand_file"].read_text(encoding="utf-8", errors="replace")
+                    ligand_text = row["ligand_file"].read_text(
+                        encoding="utf-8", errors="replace"
+                    )
                     handle.write(ligand_text)
                     if not ligand_text.endswith("\n"):
                         handle.write("\n")
@@ -439,14 +515,22 @@ class DockingWorker(QThread):
                 creationflags=NO_WINDOW,
             )
             if completed.returncode != 0:
-                message = completed.stderr.strip() or completed.stdout.strip() or "RTMScore failed."
+                message = (
+                    completed.stderr.strip()
+                    or completed.stdout.strip()
+                    or "RTMScore failed."
+                )
                 raise RuntimeError(message)
             result_file = output_prefix.with_suffix(".csv")
             scores: dict[int, float] = {}
-            with result_file.open(encoding="utf-8", errors="replace", newline="") as handle:
+            with result_file.open(
+                encoding="utf-8", errors="replace", newline=""
+            ) as handle:
                 reader = csv.DictReader(handle)
                 for index, csv_row in enumerate(reader):
-                    mode = score_rows[index]["mode"] if index < len(score_rows) else None
+                    mode = (
+                        score_rows[index]["mode"] if index < len(score_rows) else None
+                    )
                     score_value = csv_row.get("score")
                     if mode is not None and score_value not in {None, ""}:
                         scores[mode] = float(score_value)
@@ -454,11 +538,15 @@ class DockingWorker(QThread):
         finally:
             shutil.rmtree(working_dir, ignore_errors=True)
 
-    def _prepare_scoring_inputs(self, ligand_results: list[dict], working_dir: Path, ligand_format: str) -> list[dict]:
+    def _prepare_scoring_inputs(
+        self, ligand_results: list[dict], working_dir: Path, ligand_format: str
+    ) -> list[dict]:
         """Prepare receptor and per-pose ligand files for external rescoring."""
         receptor_pdbqt = self.rigid_receptor_path or self.receptor_path
         if receptor_pdbqt is None:
-            raise RuntimeError("Nenhum arquivo de receptor está disponível para repontuação.")
+            raise RuntimeError(
+                "Nenhum arquivo de receptor está disponível para repontuação."
+            )
         if find_obabel_executable() is None:
             raise RuntimeError("OpenBabel não encontrado.")
 
@@ -467,12 +555,20 @@ class DockingWorker(QThread):
 
         prepared_rows: list[dict] = []
         for row in ligand_results:
-            pose_pdbqt = working_dir / f"{safe_stem(Path(row['ligand_name']))}_pose{row['mode']}.pdbqt"
+            pose_pdbqt = (
+                working_dir
+                / f"{safe_stem(Path(row['ligand_name']))}_pose{row['mode']}.pdbqt"
+            )
             pose_pdbqt.write_text(
-                extract_pose_model(Path(row["output_file"]), int(row["mode"]), include_model=False),
+                extract_pose_model(
+                    Path(row["output_file"]), int(row["mode"]), include_model=False
+                ),
                 encoding="utf-8",
             )
-            ligand_file = working_dir / f"{safe_stem(Path(row['ligand_name']))}_pose{row['mode']}.{ligand_format}"
+            ligand_file = (
+                working_dir
+                / f"{safe_stem(Path(row['ligand_name']))}_pose{row['mode']}.{ligand_format}"
+            )
             convert_with_obabel(pose_pdbqt, ligand_file)
             prepared_rows.append(
                 {
@@ -490,32 +586,42 @@ class DockingWorker(QThread):
             return self._scoring_extract_dirs[scoring_key]
         scorer = self._scoring_archives.get(scoring_key)
         if scorer is None:
-            raise RuntimeError(f"Arquivo de pontuação não encontrado para {scoring_key}.")
+            raise RuntimeError(
+                f"Arquivo de pontuação não encontrado para {scoring_key}."
+            )
         extract_dir = Path(tempfile.mkdtemp(prefix=f"vinalab_{scoring_key}_"))
-        shutil.unpack_archive(str(scorer["archive_path"]), str(extract_dir))
+        _safe_extract_archive(Path(scorer["archive_path"]), extract_dir)
         self._scoring_extract_dirs[scoring_key] = extract_dir
         return extract_dir
 
     def _prepare_pdbqt_inputs(self) -> None:
         """Create sanitized PDBQT copies for files containing unsupported PDB records."""
-        receptor_result = sanitize_pdbqt_for_vina(self.receptor_path, self.output_directory, "receptor")
+        receptor_result = sanitize_pdbqt_for_vina(
+            self.receptor_path, self.output_directory, "receptor"
+        )
         self.receptor_path = receptor_result.path
         self._log_sanitization("receptor", receptor_result)
 
         if self.rigid_receptor_path:
-            rigid_result = sanitize_pdbqt_for_vina(self.rigid_receptor_path, self.output_directory, "rigid_receptor")
+            rigid_result = sanitize_pdbqt_for_vina(
+                self.rigid_receptor_path, self.output_directory, "rigid_receptor"
+            )
             self.rigid_receptor_path = rigid_result.path
             self._log_sanitization("rigid receptor", rigid_result)
 
         if self.flexible_receptor_path:
-            flex_result = sanitize_pdbqt_for_vina(self.flexible_receptor_path, self.output_directory, "flex_receptor")
+            flex_result = sanitize_pdbqt_for_vina(
+                self.flexible_receptor_path, self.output_directory, "flex_receptor"
+            )
             self.flexible_receptor_path = flex_result.path
             self._log_sanitization("flexible receptor", flex_result)
 
         prepared_ligands: list[Path] = []
         self.ligand_display_names = {}
         for ligand_path in self.ligand_paths:
-            ligand_result = sanitize_pdbqt_for_vina(ligand_path, self.output_directory, "ligand")
+            ligand_result = sanitize_pdbqt_for_vina(
+                ligand_path, self.output_directory, "ligand"
+            )
             validate_ligand_pdbqt(ligand_result.path)
             self._ensure_pdbqt_charges(ligand_result.path, "ligand")
             prepared_ligands.append(ligand_result.path)
@@ -549,17 +655,23 @@ class DockingWorker(QThread):
             return
         details: list[str] = []
         if result.removed_counts:
-            removed = ", ".join(f"{tag}={count}" for tag, count in result.removed_counts.items())
+            removed = ", ".join(
+                f"{tag}={count}" for tag, count in result.removed_counts.items()
+            )
             details.append(f"tags incompatíveis removidas [{removed}]")
         if result.normalized_counts:
-            normalized = ", ".join(f"{tag}={count}" for tag, count in result.normalized_counts.items())
+            normalized = ", ".join(
+                f"{tag}={count}" for tag, count in result.normalized_counts.items()
+            )
             details.append(f"tipos atômicos normalizados [{normalized}]")
         self.log_signal.emit(f"PDBQT sanitizado ({label}): {'; '.join(details)}.")
         self.log_signal.emit(f"Usando cópia sanitizada: {result.path}")
         if "receptor" in label.lower():
             ligand_only_tags = {"ROOT", "ENDROOT", "BRANCH", "ENDBRANCH"}
             removed_ligand_lines = sum(
-                count for tag, count in result.removed_counts.items() if tag.upper() in ligand_only_tags
+                count
+                for tag, count in result.removed_counts.items()
+                if tag.upper() in ligand_only_tags
             )
             self.log_signal.emit(
                 f"Receptor sanitizado: {removed_ligand_lines} linhas removidas (ROOT, ENDROOT, BRANCH, ENDBRANCH)."
@@ -568,8 +680,14 @@ class DockingWorker(QThread):
     def _dock_single_ligand(self, ligand_path: Path) -> list[dict]:
         """Dock a single ligand with the Vina Python API and return parsed pose rows."""
         ligand_name = self._ligand_display_name(ligand_path)
-        sf_name = self.parameters.get("vina_sf_name") or self.parameters["scoring_function"]
-        vina_instance = Vina(sf_name=sf_name, cpu=int(self.parameters["cpu"]), seed=int(self.parameters["seed"]))
+        sf_name = (
+            self.parameters.get("vina_sf_name") or self.parameters["scoring_function"]
+        )
+        vina_instance = Vina(
+            sf_name=sf_name,
+            cpu=int(self.parameters["cpu"]),
+            seed=int(self.parameters["seed"]),
+        )
 
         receptor_for_maps = self.rigid_receptor_path or self.receptor_path
         if self.flexible_receptor_path:
@@ -601,8 +719,13 @@ class DockingWorker(QThread):
             min_rmsd=float(self.parameters["min_rmsd"]),
         )
 
-        scoring_suffix = safe_stem(Path(str(self.parameters.get("scoring_function", "vina"))))
-        output_file = self.output_directory / f"{safe_stem(Path(ligand_name))}_{scoring_suffix}_out.pdbqt"
+        scoring_suffix = safe_stem(
+            Path(str(self.parameters.get("scoring_function", "vina")))
+        )
+        output_file = (
+            self.output_directory
+            / f"{safe_stem(Path(ligand_name))}_{scoring_suffix}_out.pdbqt"
+        )
         vina_instance.write_poses(
             str(output_file),
             n_poses=int(self.parameters["num_modes"]),
@@ -612,10 +735,14 @@ class DockingWorker(QThread):
         clean_pdbqt_file(output_file)
         return self.parse_output_pdbqt(output_file, ligand_name)
 
-    def _dock_single_ligand_gnina(self, ligand_path: Path, gnina_cli: Path) -> list[dict]:
+    def _dock_single_ligand_gnina(
+        self, ligand_path: Path, gnina_cli: Path
+    ) -> list[dict]:
         """Dock a single ligand with GNINA when available."""
         ligand_name = self._ligand_display_name(ligand_path)
-        output_file = self.output_directory / f"{safe_stem(Path(ligand_name))}_gnina_out.pdbqt"
+        output_file = (
+            self.output_directory / f"{safe_stem(Path(ligand_name))}_gnina_out.pdbqt"
+        )
         command = [
             str(gnina_cli),
             "--receptor",
@@ -643,7 +770,9 @@ class DockingWorker(QThread):
             "--cnn_scoring",
             "rescore",
         ]
-        self.log_signal.emit(f"Executando docking de {ligand_name} com pontuação GNINA CNN.")
+        self.log_signal.emit(
+            f"Executando docking de {ligand_name} com pontuação GNINA CNN."
+        )
         completed = subprocess.run(
             command,
             cwd=self.output_directory,
@@ -664,8 +793,13 @@ class DockingWorker(QThread):
     def _dock_single_ligand_cli(self, ligand_path: Path, vina_cli: Path) -> list[dict]:
         """Dock a single ligand with the bundled Vina CLI fallback."""
         ligand_name = self._ligand_display_name(ligand_path)
-        scoring_suffix = safe_stem(Path(str(self.parameters.get("scoring_function", "vina"))))
-        output_file = self.output_directory / f"{safe_stem(Path(ligand_name))}_{scoring_suffix}_out.pdbqt"
+        scoring_suffix = safe_stem(
+            Path(str(self.parameters.get("scoring_function", "vina")))
+        )
+        output_file = (
+            self.output_directory
+            / f"{safe_stem(Path(ligand_name))}_{scoring_suffix}_out.pdbqt"
+        )
         receptor_for_maps = self.rigid_receptor_path or self.receptor_path
         command = [
             str(vina_cli),
@@ -691,10 +825,15 @@ class DockingWorker(QThread):
             str(int(self.parameters["num_modes"])),
             "--energy_range",
             str(float(self.parameters["energy_range"])),
+            "--min_rmsd",
+            str(float(self.parameters["min_rmsd"])),
             "--cpu",
             str(int(self.parameters["cpu"])),
             "--scoring",
-            str(self.parameters.get("vina_sf_name") or self.parameters["scoring_function"]),
+            str(
+                self.parameters.get("vina_sf_name")
+                or self.parameters["scoring_function"]
+            ),
             "--out",
             str(output_file),
         ]
@@ -703,7 +842,9 @@ class DockingWorker(QThread):
         if self.flexible_receptor_path:
             command.extend(["--flex", str(self.flexible_receptor_path)])
 
-        self.log_signal.emit(f"Executando docking de {ligand_name} com fallback Vina CLI incluído.")
+        self.log_signal.emit(
+            f"Executando docking de {ligand_name} com fallback Vina CLI incluído."
+        )
         completed = subprocess.run(
             command,
             cwd=self.output_directory,
@@ -717,7 +858,9 @@ class DockingWorker(QThread):
         for line in completed.stderr.splitlines():
             self.log_signal.emit(line)
         if completed.returncode != 0:
-            raise RuntimeError(f"Vina CLI incluído finalizou com código {completed.returncode}.")
+            raise RuntimeError(
+                f"Vina CLI incluído finalizou com código {completed.returncode}."
+            )
         clean_pdbqt_file(output_file)
         return self.parse_output_pdbqt(output_file, ligand_name)
 
@@ -745,14 +888,28 @@ class DockingWorker(QThread):
         outside = [
             coordinate
             for coordinate in coordinates
-            if any(coordinate[index] < lower[index] or coordinate[index] > upper[index] for index in range(3))
+            if any(
+                coordinate[index] < lower[index] or coordinate[index] > upper[index]
+                for index in range(3)
+            )
         ]
         if not outside:
             return None
         bounds = pdbqt_coordinate_bounds([ligand_path])
         if bounds is None:
             return None
-        suggested_size = tuple(max(float(self.parameters[f"size_{axis}"]), 2 * max(abs(bounds[index][0] - center[index]), abs(bounds[index][1] - center[index])) + 2.0) for index, axis in enumerate(("x", "y", "z")))
+        suggested_size = tuple(
+            max(
+                float(self.parameters[f"size_{axis}"]),
+                2
+                * max(
+                    abs(bounds[index][0] - center[index]),
+                    abs(bounds[index][1] - center[index]),
+                )
+                + 2.0,
+            )
+            for index, axis in enumerate(("x", "y", "z"))
+        )
         return (
             "Alguns átomos do ligante estão fora da caixa de busca atual. "
             f"Intervalos X/Y/Z da grade: {lower[0]:.3f}..{upper[0]:.3f}, "
@@ -774,10 +931,14 @@ class DockingWorker(QThread):
         current_mode: int | None = None
         current_cnn_score: float | None = None
         current_cnn_affinity: float | None = None
-        for line in clean_pdbqt_text(output_file.read_text(encoding="utf-8", errors="replace")).splitlines():
+        for line in clean_pdbqt_text(
+            output_file.read_text(encoding="utf-8", errors="replace")
+        ).splitlines():
             if line.startswith("MODEL"):
                 parts = line.split()
-                current_mode = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None
+                current_mode = (
+                    int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None
+                )
                 current_cnn_score = None
                 current_cnn_affinity = None
             elif "CNNscore" in line:
@@ -812,7 +973,10 @@ class DockingWorker(QThread):
     def _vina_cli_path() -> Path | None:
         """Return the bundled AutoDock Vina executable fallback."""
         candidates = [
-            Path(__file__).resolve().parents[1] / "tools" / "vina" / "vina_1.2.7_win.exe",
+            Path(__file__).resolve().parents[1]
+            / "tools"
+            / "vina"
+            / "vina_1.2.7_win.exe",
             Path.cwd() / "tools" / "vina" / "vina_1.2.7_win.exe",
         ]
         for candidate in candidates:
@@ -834,6 +998,28 @@ class DockingWorker(QThread):
             if candidate.exists() and candidate.is_file():
                 return candidate
         return None
+
+
+def _safe_extract_archive(archive_path: Path, destination: Path) -> None:
+    """Extract an archive into ``destination`` rejecting path-traversal members.
+
+    ``shutil.unpack_archive`` / ``ZipFile.extractall`` will happily write outside the
+    target directory if an archive contains members with ``..`` or absolute paths
+    (zip-slip). Scoring bundles are shipped with the app, but a corrupt or swapped
+    archive dropped into ``pontuacao/`` must not be able to escape the temp dir.
+    """
+    destination = destination.resolve()
+    if zipfile.is_zipfile(archive_path):
+        with zipfile.ZipFile(archive_path) as bundle:
+            for member in bundle.namelist():
+                target = (destination / member).resolve()
+                if target != destination and destination not in target.parents:
+                    raise RuntimeError(
+                        f"Arquivo de pontuação rejeitado: membro fora do diretório de extração ({member})."
+                    )
+            bundle.extractall(destination)
+        return
+    shutil.unpack_archive(str(archive_path), str(destination))
 
 
 def _last_float(line: str) -> float | None:

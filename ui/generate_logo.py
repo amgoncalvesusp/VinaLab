@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Generate the VinaLab caffeine molecule logo."""
 
 from pathlib import Path
