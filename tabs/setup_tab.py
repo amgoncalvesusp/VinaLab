@@ -192,7 +192,8 @@ class SetupTab(QWidget):
         self.fully_rigid_checkbox.toggled.connect(self._toggle_flex_visibility)
         self.rigid_receptor_edit.setToolTip(I18n.get("setup_rigid_tooltip", self.lang))
         self.flex_receptor_edit.setToolTip(I18n.get("setup_flex_tooltip", self.lang))
-        self.flex_receptor_label.setToolTip(flex_tooltip)
+        self.rigid_receptor_label.setToolTip(I18n.get("setup_rigid_tooltip", self.lang))
+        self.flex_receptor_label.setToolTip(I18n.get("setup_flex_tooltip", self.lang))
         return self.receptor_group
 
     def _toggle_flex_visibility(self, fully_rigid: bool) -> None:
