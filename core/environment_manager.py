@@ -643,7 +643,10 @@ class EnvironmentManager:
         if self._is_frozen_bundle():
             self.clear_caches()
             report = self.full_status_report()
-            return bool(report["all_ready"])
+            ready = bool(report["all_ready"])
+            if not ready:
+                self._write_error_log(self._frozen_failure_report(report))
+            return ready
         env = self.detect_python_env()
         if sys.version_info < (3, 10):
             self._write_error_log("Python 3.10 or newer is required.")
@@ -798,6 +801,47 @@ class EnvironmentManager:
     def _write_error_log(self, message: str) -> None:
         """Write installation failure details to install_error.log."""
         self.error_log_path.write_text(message, encoding="utf-8")
+
+    def _frozen_failure_report(self, report: dict) -> str:
+        """Build a human-readable diagnostic for a failed frozen-bundle check.
+
+        The frozen bundle has no pip step, so failures are missing/broken bundled
+        imports. Listing exactly which required packages and which Vina mode failed
+        gives the user (and us) a concrete cause in logs/install_error.log instead
+        of a generic "Configuração falhou".
+        """
+        lines = ["VinaLab frozen environment check failed.", ""]
+        missing_required = [
+            package
+            for package in report.get("packages", [])
+            if package.get("required", True) and not package.get("installed", False)
+        ]
+        if missing_required:
+            lines.append("Pacotes obrigatórios ausentes ou não importáveis:")
+            lines.extend(
+                f"  - {package['name']} ({package.get('description', '')})"
+                for package in missing_required
+            )
+        else:
+            lines.append("Todos os pacotes obrigatórios foram importados.")
+        vina = report.get("vina", {})
+        if not vina.get("ok"):
+            lines.append("")
+            lines.append(
+                f"AutoDock Vina indisponível: {vina.get('error', 'desconhecido')}"
+            )
+        disabled_scorers = [
+            status.get("label", key)
+            for key, status in report.get("scoring_functions", {}).items()
+            if not status.get("available", False)
+        ]
+        if disabled_scorers:
+            lines.append("")
+            lines.append(
+                "Funções de pontuação opcionais desativadas (não bloqueiam o uso principal): "
+                + ", ".join(disabled_scorers)
+            )
+        return "\n".join(lines) + "\n"
 
     def _find_base_python(self) -> Path | None:
         """Find a real Python 3.10+ executable, avoiding the frozen VinaLab.exe."""
