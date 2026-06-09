@@ -10,3 +10,8 @@ __pycache__/
 environment_status.json
 release/
 artifacts/
+# Bundled GNINA build is large (~200 MB); shipped inside the built exe, not in git.
+tools/gnina/
+# Build/upload transcripts
+build_log.txt
+upload_log.txt

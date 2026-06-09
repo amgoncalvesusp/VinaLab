@@ -28,7 +28,9 @@ class ConversionWorker(QThread):
     finished_signal = Signal(object)
     log_signal = Signal(str)
 
-    def __init__(self, input_paths: list[Path], output_target: Path, molecule_type: str) -> None:
+    def __init__(
+        self, input_paths: list[Path], output_target: Path, molecule_type: str
+    ) -> None:
         """Initialize the worker with conversion paths and molecule type."""
         super().__init__()
         self.input_paths = list(input_paths)
@@ -38,7 +40,9 @@ class ConversionWorker(QThread):
     def run(self) -> None:
         """Execute all requested conversions and emit a list of results."""
         results: list[ConversionResult] = []
-        output_is_folder = len(self.input_paths) > 1 or self.output_target.suffix.lower() != ".pdbqt"
+        output_is_folder = (
+            len(self.input_paths) > 1 or self.output_target.suffix.lower() != ".pdbqt"
+        )
         if output_is_folder:
             self.output_target.mkdir(parents=True, exist_ok=True)
 
@@ -66,21 +70,48 @@ class ConversionWorker(QThread):
             if input_path.resolve() != output_path.resolve():
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(input_path, output_path)
-                return ConversionResult(True, output_path, "Arquivo já está em PDBQT; copiado para a saída.", "")
-            return ConversionResult(True, input_path, "Arquivo já está em PDBQT; conversão não necessária.", "")
+                return ConversionResult(
+                    True,
+                    output_path,
+                    "Arquivo já está em PDBQT; copiado para a saída.",
+                    "",
+                )
+            return ConversionResult(
+                True,
+                input_path,
+                "Arquivo já está em PDBQT; conversão não necessária.",
+                "",
+            )
         if detected == "unknown":
-            return ConversionResult(False, output_path, "", "Formato de arquivo não reconhecido.")
+            return ConversionResult(
+                False, output_path, "", "Formato de arquivo não reconhecido."
+            )
         if self.molecule_type == "receptor":
             if detected == "pdb":
-                return FileConverter.convert_pdb_to_pdbqt_receptor(input_path, output_path)
-            if detected == "mol2":
-                return FileConverter.convert_mol2_to_pdbqt_receptor(input_path, output_path)
-            return ConversionResult(False, output_path, "", "A conversão de receptor aceita entrada PDB, MOL2 ou PDBQT.")
+                return FileConverter.convert_pdb_to_pdbqt_receptor(
+                    input_path, output_path
+                )
+            if detected in {"mol2", "sdf"}:
+                return FileConverter.convert_mol2_to_pdbqt_receptor(
+                    input_path, output_path
+                )
+            return ConversionResult(
+                False,
+                output_path,
+                "",
+                "A conversão de receptor aceita entrada PDB, MOL2, SDF ou PDBQT.",
+            )
         if detected == "pdb":
             return FileConverter.convert_pdb_to_pdbqt_ligand(input_path, output_path)
         if detected == "mol2":
             return FileConverter.convert_mol2_to_pdbqt_ligand(input_path, output_path)
-        return ConversionResult(False, output_path, "", "Formato de arquivo não reconhecido.")
+        if detected == "sdf":
+            return FileConverter._convert_ligand_rdkit_meeko(
+                input_path, output_path, "sdf"
+            )
+        return ConversionResult(
+            False, output_path, "", "Formato de arquivo não reconhecido."
+        )
 
 
 class ConverterWidget(QWidget):
@@ -125,7 +156,11 @@ class ConverterWidget(QWidget):
         self.subtitle_label.setText(I18n.get("converter_subtitle", lang))
         self.note_label.setText(I18n.get("converter_pdbqt_note", lang))
         self.input_label.setText(I18n.get("input_file", lang))
-        self.output_label.setText(I18n.get("output_folder" if self._is_batch_selection() else "output_file", lang))
+        self.output_label.setText(
+            I18n.get(
+                "output_folder" if self._is_batch_selection() else "output_file", lang
+            )
+        )
         self.type_label.setText(I18n.get("molecule_type", lang))
         self.input_button.setText(I18n.get("browse_button", lang))
         self.output_button.setText(I18n.get("browse_button", lang))
@@ -144,7 +179,11 @@ class ConverterWidget(QWidget):
             if widget:
                 widget.deleteLater()
         deps = FileConverter.check_dependencies()
-        for key, tooltip_key in (("rdkit", "tip_rdkit"), ("meeko", "tip_rdkit"), ("obabel_cli", "tip_openbabel")):
+        for key, tooltip_key in (
+            ("rdkit", "tip_rdkit"),
+            ("meeko", "tip_rdkit"),
+            ("obabel_cli", "tip_openbabel"),
+        ):
             color = "#27AE60" if deps.get(key) else "#C0392B"
             dot = QLabel(f"● {key}")
             dot.setStyleSheet(f"color: {color};")
@@ -165,7 +204,9 @@ class ConverterWidget(QWidget):
         molecule_type = self._current_molecule_type()
         self.result_label.clear()
         self.use_button.hide()
-        self.log_console.append(f"{I18n.get('convert_button', self.lang)}: {len(self.input_paths)} arquivo(s)")
+        self.log_console.append(
+            f"{I18n.get('convert_button', self.lang)}: {len(self.input_paths)} arquivo(s)"
+        )
         self.convert_button.setEnabled(False)
         self.worker = ConversionWorker(self.input_paths, output_target, molecule_type)
         self.worker.log_signal.connect(self.log_console.append)
@@ -189,13 +230,17 @@ class ConverterWidget(QWidget):
         layout.addWidget(self.title_label)
         layout.addWidget(self.subtitle_label)
         layout.addWidget(self.note_label)
-        layout.addLayout(self._file_row(self.input_label, self.input_edit, self.input_button))
+        layout.addLayout(
+            self._file_row(self.input_label, self.input_edit, self.input_button)
+        )
         type_row = QHBoxLayout()
         self.type_combo.addItems(["", ""])
         type_row.addWidget(self.type_label)
         type_row.addWidget(self.type_combo)
         layout.addLayout(type_row)
-        layout.addLayout(self._file_row(self.output_label, self.output_edit, self.output_button))
+        layout.addLayout(
+            self._file_row(self.output_label, self.output_edit, self.output_button)
+        )
         self.dep_row.addWidget(self.dep_label)
         layout.addLayout(self.dep_row)
         layout.addWidget(self.convert_button)
@@ -239,11 +284,15 @@ class ConverterWidget(QWidget):
     def _pick_output(self) -> None:
         """Pick an output PDBQT file or output folder."""
         if self._is_batch_selection():
-            folder = QFileDialog.getExistingDirectory(self, I18n.get("select_output_folder", self.lang))
+            folder = QFileDialog.getExistingDirectory(
+                self, I18n.get("select_output_folder", self.lang)
+            )
             if folder:
                 self.output_edit.setText(str(Path(folder)))
             return
-        file_name, _ = QFileDialog.getSaveFileName(self, I18n.get("output_file", self.lang), "", "PDBQT (*.pdbqt)")
+        file_name, _ = QFileDialog.getSaveFileName(
+            self, I18n.get("output_file", self.lang), "", "PDBQT (*.pdbqt)"
+        )
         if file_name:
             self.output_edit.setText(str(Path(file_name)))
 
@@ -256,7 +305,12 @@ class ConverterWidget(QWidget):
             self.output_edit.setText(str(output_folder))
         else:
             self.output_edit.setText(str(self.input_paths[0].with_suffix(".pdbqt")))
-        self.output_label.setText(I18n.get("output_folder" if self._is_batch_selection() else "output_file", self.lang))
+        self.output_label.setText(
+            I18n.get(
+                "output_folder" if self._is_batch_selection() else "output_file",
+                self.lang,
+            )
+        )
 
     def _conversion_finished(self, results: list[ConversionResult]) -> None:
         """Handle conversion completion in the GUI thread."""
@@ -266,21 +320,31 @@ class ConverterWidget(QWidget):
         ok_results = [result for result in results if result.success]
         failed_results = [result for result in results if not result.success]
         if failed_results:
-            self.result_label.setStyleSheet("color: #f39c12;" if ok_results else "color: #C0392B;")
+            self.result_label.setStyleSheet(
+                "color: #f39c12;" if ok_results else "color: #C0392B;"
+            )
             self.result_label.setText(
-                I18n.get("conv_batch_partial", self.lang).format(ok=len(ok_results), total=len(results))
+                I18n.get("conv_batch_partial", self.lang).format(
+                    ok=len(ok_results), total=len(results)
+                )
             )
         elif self._is_batch_selection():
             self.result_label.setStyleSheet("color: #27AE60;")
-            self.result_label.setText(I18n.get("conv_batch_success", self.lang).format(count=len(ok_results)))
+            self.result_label.setText(
+                I18n.get("conv_batch_success", self.lang).format(count=len(ok_results))
+            )
         elif ok_results:
             self.result_label.setStyleSheet("color: #27AE60;")
-            self.result_label.setText(f"{I18n.get('conv_success', self.lang)}: {ok_results[0].output_path}")
+            self.result_label.setText(
+                f"{I18n.get('conv_success', self.lang)}: {ok_results[0].output_path}"
+            )
         else:
             self._show_failure(I18n.get("conv_failure", self.lang))
             return
         self._refresh_use_button()
-        if ok_results and not (self._current_molecule_type() == "receptor" and len(ok_results) != 1):
+        if ok_results and not (
+            self._current_molecule_type() == "receptor" and len(ok_results) != 1
+        ):
             self.use_button.show()
 
     def _emit_current_result(self) -> None:
@@ -291,7 +355,9 @@ class ConverterWidget(QWidget):
         if self._current_molecule_type() == "receptor":
             self.conversion_ready.emit(str(ok_results[0].output_path), "receptor")
         elif self._is_batch_selection():
-            self.conversion_ready.emit(str(self._current_output_target()), "ligand_batch")
+            self.conversion_ready.emit(
+                str(self._current_output_target()), "ligand_batch"
+            )
         else:
             self.conversion_ready.emit(str(ok_results[0].output_path), "ligand")
 

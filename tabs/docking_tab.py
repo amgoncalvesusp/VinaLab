@@ -174,8 +174,7 @@ class ScoringFunctionSelector(QGroupBox):
         for option in self.options:
             key = option["key"]
             base_label = option["label_pt"] if lang == "pt" else option["label_en"]
-            stars = _render_stars(option.get("stars", 0))
-            self.checkboxes[key].setText(f"{base_label} {stars}")
+            self.checkboxes[key].setText(base_label)
             self.description_labels[key].setText(
                 self._description_with_status(option, lang)
             )
@@ -396,7 +395,7 @@ class DockingTab(QWidget):
             Path(__file__).resolve().parents[1] / "config" / "box_presets.json"
         )
         self.exhaustiveness = self._spin(1, 512, 8)
-        self.num_modes = self._spin(1, 20, 9)  # max poses raised to 20
+        self.num_modes = self._spin(1, 100, 9)  # max poses
         self.energy_range = self._double_spin(1, 10, 0.5, 1, 3.0)
         self.cpu = self._spin(0, 64, 0)
         self.seed = self._spin(0, 2147483647, 0)
@@ -757,16 +756,19 @@ class DockingTab(QWidget):
         output_form.addRow(config_row)
         layout.addWidget(self.output_group)
 
+        self.dependency_status_label.setWordWrap(True)
+        layout.addWidget(self.dependency_status_label)
+        # Pre-run checklist appears BEFORE the Run button so the user can review
+        # readiness before launching the docking.
+        self.checklist_group.setLayout(self.checklist_layout)
+        layout.addWidget(self.checklist_group)
+
         button_row = QHBoxLayout()
         self.run_button.clicked.connect(self.launch_docking)
         button_row.addStretch()
         button_row.addWidget(self.run_button)
         layout.addLayout(button_row)
         layout.addWidget(self.progress_bar)
-        self.dependency_status_label.setWordWrap(True)
-        layout.addWidget(self.dependency_status_label)
-        self.checklist_group.setLayout(self.checklist_layout)
-        layout.addWidget(self.checklist_group)
         outer_layout.addWidget(ScrollManager.wrap(content))
 
     def _box_size_preset_row(self) -> QHBoxLayout:
@@ -915,11 +917,12 @@ class DockingTab(QWidget):
             )
 
     def fit_grid_to_ligands(self) -> None:
-        """Set a uniform cubic box size from ligand bounds; do not touch the box center.
+        """Size AND center a uniform cubic box around the ligand bounds.
 
-        Per Issues 12 and 18: use the largest of the three axis extents as the uniform
-        cubic side, plus 1 Å of padding. The box center is kept untouched so users
-        can position the search box independently.
+        Uses the largest of the three axis extents as the cubic side (plus 1 Å of
+        padding) and centers the box on the mid-point of the ligand bounds, so the
+        whole ligand is enclosed and the "atoms outside the box" warning does not
+        fire when the box was auto-fit to the ligand.
         """
         ligand_paths = self.setup_provider.ligand_paths()
         bounds = pdbqt_coordinate_bounds(ligand_paths)
@@ -933,6 +936,12 @@ class DockingTab(QWidget):
 
         extents = tuple(axis_bounds[1] - axis_bounds[0] for axis_bounds in bounds)
         cube_side = min(126.0, max(1.0, max(extents) + 1.0))
+        center = tuple(
+            (axis_bounds[0] + axis_bounds[1]) / 2.0 for axis_bounds in bounds
+        )
+        self.center_x.setValue(center[0])
+        self.center_y.setValue(center[1])
+        self.center_z.setValue(center[2])
         self.size_x.setValue(cube_side)
         self.size_y.setValue(cube_side)
         self.size_z.setValue(cube_side)

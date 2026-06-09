@@ -3,6 +3,7 @@
 
 import json
 import logging
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -14,7 +15,7 @@ import pandas as pd
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 from openpyxl.styles import Font, PatternFill
-from PySide6.QtCore import QPoint, Signal, Qt
+from PySide6.QtCore import QPoint, QUrl, Signal, Qt
 from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -64,6 +65,11 @@ from core.rmsd import (
 )
 from core.scrolling import ScrollManager
 from tabs.results_clustering import build_pose_clusters
+from tabs.results_plotly import (
+    affinity_chart_html,
+    cluster_chart_html,
+    plotly_available,
+)
 from tabs.results_dialogs import (
     ComparisonDialog,
     ExportComplexDialog,
@@ -103,6 +109,11 @@ class ResultsTab(QWidget):
         self.log_console = QTextEdit()
         self.figure = Figure(figsize=(8, 3), tight_layout=True)
         self.canvas = FigureCanvasQTAgg(self.figure)
+        # Interactive Plotly chart (hover shows molecule); matplotlib stays as the
+        # PNG source for the PDF report and as a fallback when WebEngine/Plotly are
+        # unavailable.
+        self._charts_interactive = QWebEngineView is not None and plotly_available()
+        self.affinity_web = QWebEngineView() if self._charts_interactive else None
         self.excel_button = QPushButton()
         self.csv_button = QPushButton()
         self.filtered_export_button = QPushButton()
@@ -142,6 +153,7 @@ class ResultsTab(QWidget):
         self.cluster_export_button = QPushButton()
         self.cluster_figure = Figure(figsize=(4, 2), tight_layout=True)
         self.cluster_canvas = FigureCanvasQTAgg(self.cluster_figure)
+        self.cluster_web = QWebEngineView() if self._charts_interactive else None
         self.cluster_tab_index = -1
         self.current_clusters: list[dict] = []
         self.column_keys: list[str] = []
@@ -339,7 +351,11 @@ class ResultsTab(QWidget):
         button_row.addWidget(self.excel_button)
         button_row.addWidget(self.csv_button)
         button_row.addStretch()
-        results_layout.addWidget(self.canvas, stretch=1)
+        affinity_widget = (
+            self.affinity_web if self.affinity_web is not None else self.canvas
+        )
+        affinity_widget.setMinimumHeight(360)
+        results_layout.addWidget(affinity_widget, stretch=3)
         results_layout.addLayout(button_row)
         results_layout.addWidget(self.log_console, stretch=1)
 
@@ -452,7 +468,11 @@ class ResultsTab(QWidget):
         ScrollManager.optimize(self.cluster_table)
         clusters_layout.addLayout(cluster_controls)
         clusters_layout.addWidget(self.cluster_table, stretch=2)
-        clusters_layout.addWidget(self.cluster_canvas, stretch=1)
+        cluster_chart_widget = (
+            self.cluster_web if self.cluster_web is not None else self.cluster_canvas
+        )
+        cluster_chart_widget.setMinimumHeight(320)
+        clusters_layout.addWidget(cluster_chart_widget, stretch=3)
 
         self.preview_tabs.addTab(results_panel, I18n.get("results_table", self.lang))
         self.preview_tabs.addTab(
@@ -565,6 +585,18 @@ class ResultsTab(QWidget):
         self.chart_path = Path(tempfile.gettempdir()) / "vinalab_affinity_chart.png"
         self.figure.savefig(self.chart_path, dpi=160, bbox_inches="tight")
         self.chart_updated.emit(self.chart_path)
+        if self.affinity_web is not None and rows:
+            try:
+                html_path = affinity_chart_html(
+                    rows,
+                    I18n.get("affinity_col", self.lang),
+                    I18n.get("chart_title", self.lang),
+                )
+                self.affinity_web.setUrl(QUrl.fromLocalFile(str(html_path)))
+            except Exception as exc:  # noqa: BLE001 - chart is non-critical
+                logger.warning(
+                    "Falha ao renderizar gráfico Plotly de afinidade: %s", exc
+                )
 
     def _dataframe(self, rows: list[dict] | None = None) -> pd.DataFrame:
         """Return results as a pandas DataFrame."""
@@ -638,7 +670,7 @@ class ResultsTab(QWidget):
                 I18n.get("rt_select_pose", self.lang),
             )
             return
-        pymol_exe = shutil.which("pymol")
+        pymol_exe = self._find_pymol()
         if pymol_exe is None:
             QMessageBox.warning(
                 self,
@@ -670,13 +702,46 @@ class ResultsTab(QWidget):
             if receptor_file.exists():
                 cmd_args.append(str(receptor_file))
             cmd_args.append(str(pose_file))
-            subprocess.Popen(cmd_args, creationflags=NO_WINDOW)
+            # No NO_WINDOW here: PyMOL is a GUI app and must show its window.
+            subprocess.Popen(cmd_args)
         except Exception as exc:  # noqa: BLE001 - surface file/pose extraction errors to the user
             QMessageBox.critical(
                 self,
                 "PyMOL",
                 I18n.get("rt_pymol_open_error", self.lang).format(exc=exc),
             )
+
+    @staticmethod
+    def _find_pymol() -> str | None:
+        """Locate a PyMOL executable across PATH and common Windows installs.
+
+        Schrodinger/Incentive PyMOL installs as PyMOLWin.exe / PyMOL.exe and is
+        usually not on PATH, so shutil.which('pymol') alone failed silently.
+        """
+        for name in ("pymol", "pymol.exe", "PyMOLWin.exe", "PyMOL.exe", "pymolwin"):
+            found = shutil.which(name)
+            if found:
+                return found
+        candidates: list[Path] = []
+        roots = [
+            os.environ.get("LOCALAPPDATA", ""),
+            os.environ.get("ProgramFiles", ""),
+            os.environ.get("ProgramFiles(x86)", ""),
+            str(Path.home()),
+        ]
+        for root in roots:
+            if not root:
+                continue
+            base = Path(root)
+            candidates += list(base.glob("Schrodinger/PyMOL*/PyMOLWin.exe"))
+            candidates += list(base.glob("Schrodinger/PyMOL*/PyMOL.exe"))
+            candidates += list(base.glob("PyMOL*/PyMOLWin.exe"))
+            candidates += list(base.glob("PyMOL*/PyMOLWin.exe"))
+            candidates += list(base.glob("DeLano Scientific/PyMOL*/PyMOLWin.exe"))
+        for candidate in candidates:
+            if candidate.exists() and candidate.is_file():
+                return str(candidate)
+        return None
 
     def open_comparison_dialog(self) -> None:
         """Open pose/scoring comparison tools."""
@@ -1449,6 +1514,16 @@ class ResultsTab(QWidget):
             axis.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
             axis.set_ylabel("Tamanho do cluster")
         self.cluster_canvas.draw_idle()
+        if self.cluster_web is not None and self.current_clusters:
+            try:
+                html_path = cluster_chart_html(
+                    self.current_clusters, I18n.get("cluster_size", self.lang)
+                )
+                self.cluster_web.setUrl(QUrl.fromLocalFile(str(html_path)))
+            except Exception as exc:  # noqa: BLE001 - chart is non-critical
+                logger.warning(
+                    "Falha ao renderizar gráfico Plotly de clusters: %s", exc
+                )
 
     def _cluster_row_clicked(self, row_index: int, _column_index: int) -> None:
         """Load a cluster representative when a cluster row is clicked."""

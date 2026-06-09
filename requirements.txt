@@ -21,6 +21,7 @@
 PySide6>=6.7,<6.8
 PySide6-Addons>=6.7,<6.8
 meeko>=0.4
+ProDy>=2.4
 scipy>=1.10
 gemmi>=0.6
 rdkit>=2023.3.1
@@ -28,6 +29,8 @@ openbabel-wheel>=3.1.1
 pandas>=1.5
 matplotlib>=3.6
 mplcursors>=0.5
+plotly>=5.18
+MDAnalysis>=2.0
 openpyxl>=3.0
 reportlab>=3.6
 numpy>=1.23,<2

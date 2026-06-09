@@ -87,6 +87,25 @@ class EnvironmentManager:
             "version": ">=3.1",
             "description": "Format conversion fallback",
         },
+        # ProDy is imported at module load by meeko 0.7; without it 'import meeko' fails.
+        {
+            "import_name": "prody",
+            "pip_name": "ProDy",
+            "version": ">=2.4",
+            "description": "Structure parsing required by meeko",
+        },
+        {
+            "import_name": "MDAnalysis",
+            "pip_name": "MDAnalysis",
+            "version": ">=2.0",
+            "description": "Receptor-ligand interaction analysis",
+        },
+        {
+            "import_name": "plotly",
+            "pip_name": "plotly",
+            "version": ">=5.18",
+            "description": "Interactive result charts",
+        },
         {
             "import_name": "pandas",
             "pip_name": "pandas",
@@ -201,20 +220,7 @@ class EnvironmentManager:
             "description": "Molecular graph utilities for RTMScore",
             "required": False,
         },
-        {
-            "import_name": "MDAnalysis",
-            "pip_name": "MDAnalysis",
-            "version": ">=2.0",
-            "description": "RTMScore structure parsing",
-            "required": False,
-        },
-        {
-            "import_name": "prody",
-            "pip_name": "ProDy",
-            "version": ">=2.4",
-            "description": "RTMScore pocket extraction dependency",
-            "required": False,
-        },
+        # MDAnalysis and ProDy moved to CORE_PACKAGES (needed by meeko + interactions).
         {
             "import_name": "torch_scatter",
             "pip_name": "torch-scatter",

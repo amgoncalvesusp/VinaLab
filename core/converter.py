@@ -55,6 +55,10 @@ class FileConverter:
         text = "\n".join(lines).lower()
         if "@<tripos>molecule" in text:
             return "mol2"
+        if filepath.suffix.lower() in {".sdf", ".mol"} or any(
+            marker in text for marker in ("v2000", "v3000", "$$$$", "m  end")
+        ):
+            return "sdf"
         torsion_markers = {"ROOT", "ENDROOT", "BRANCH", "ENDBRANCH", "TORSDOF"}
         autodock_only_types = {"A", "HD", "HS", "OA", "OS", "NA", "NS", "SA"}
         for line in lines:
@@ -171,13 +175,53 @@ class FileConverter:
                 post_stats,
             )
             return FileConverter._validated_ligand_result(output_path, log, "", mol)
-        except Exception as exc:  # noqa: BLE001 - any failure in the pipeline must surface in pt-BR
+        except Exception as exc:  # noqa: BLE001 - RDKit/Meeko failed; try Open Babel fallback
+            fallback = FileConverter._convert_ligand_via_obabel(input_path, output_path)
+            if fallback.success:
+                return fallback
             return ConversionResult(
                 False,
                 output_path,
-                "",
-                f"Erro: geometria do ligante inválida após conversão. Verifique o arquivo de entrada.\n{exc}",
+                fallback.log,
+                f"Erro: não foi possível converter o ligante {input_format.upper()} "
+                f"com RDKit/Meeko nem com Open Babel.\nRDKit/Meeko: {exc}\n{fallback.errors}",
             )
+
+    @staticmethod
+    def _convert_ligand_via_obabel(
+        input_path: Path, output_path: Path
+    ) -> ConversionResult:
+        """Open Babel ligand fallback: convert MOL2/SDF/PDB straight to PDBQT.
+
+        Open Babel infers the input format from the file extension, adds hydrogens
+        and Gasteiger charges, and writes a single-ligand PDBQT. Used when the
+        RDKit + Meeko pipeline cannot parse the input (common with some MOL2/SDF
+        variants), matching the "go through an intermediate and let the converter
+        do it" approach.
+        """
+        result = FileConverter._run_openbabel(
+            input_path,
+            output_path,
+            ["-h", "--partialcharge", "gasteiger"],
+            "RDKit/Meeko indisponível para o ligante.",
+        )
+        if not result.success or not output_path.exists():
+            return result
+        try:
+            validate_ligand_pdbqt(output_path)
+        except ValueError as exc:
+            return ConversionResult(
+                False,
+                output_path,
+                result.log,
+                f"Open Babel gerou um PDBQT inválido: {exc}",
+            )
+        return ConversionResult(
+            True,
+            output_path,
+            (result.log or "") + "\nLigante convertido com Open Babel (fallback).",
+            result.errors,
+        )
 
     @staticmethod
     def _mol2_fallback_via_molblock(input_path: Path):
@@ -388,7 +432,7 @@ class FileConverter:
                 return FileConverter.convert_pdb_to_pdbqt_receptor(
                     input_path, output_path
                 )
-            if detected == "mol2":
+            if detected in {"mol2", "sdf"}:
                 return FileConverter.convert_mol2_to_pdbqt_receptor(
                     input_path, output_path
                 )
@@ -396,12 +440,16 @@ class FileConverter:
                 False,
                 output_path,
                 "",
-                "A conversão de receptor aceita entrada PDB, MOL2 ou PDBQT.",
+                "A conversão de receptor aceita entrada PDB, MOL2, SDF ou PDBQT.",
             )
         if detected == "pdb":
             return FileConverter.convert_pdb_to_pdbqt_ligand(input_path, output_path)
         if detected == "mol2":
             return FileConverter.convert_mol2_to_pdbqt_ligand(input_path, output_path)
+        if detected == "sdf":
+            return FileConverter._convert_ligand_rdkit_meeko(
+                input_path, output_path, "sdf"
+            )
         return ConversionResult(
             False, output_path, "", "Formato de arquivo não reconhecido."
         )

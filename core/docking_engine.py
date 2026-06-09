@@ -683,6 +683,12 @@ class DockingWorker(QThread):
         sf_name = (
             self.parameters.get("vina_sf_name") or self.parameters["scoring_function"]
         )
+        if sf_name == "ad4":
+            raise RuntimeError(
+                "AutoDock4 (ad4) exige mapas de afinidade pré-calculados pelo AutoGrid4, "
+                "que não estão incluídos nesta versão. Use Vina, Vinardo ou GNINA. "
+                "Para habilitar o ad4, é necessário fornecer o autogrid4 e gerar os mapas."
+            )
         vina_instance = Vina(
             sf_name=sf_name,
             cpu=int(self.parameters["cpu"]),
@@ -792,6 +798,15 @@ class DockingWorker(QThread):
 
     def _dock_single_ligand_cli(self, ligand_path: Path, vina_cli: Path) -> list[dict]:
         """Dock a single ligand with the bundled Vina CLI fallback."""
+        sf_name = (
+            self.parameters.get("vina_sf_name") or self.parameters["scoring_function"]
+        )
+        if sf_name == "ad4":
+            raise RuntimeError(
+                "AutoDock4 (ad4) exige mapas de afinidade pré-calculados pelo AutoGrid4, "
+                "que não estão incluídos nesta versão. Use Vina, Vinardo ou GNINA. "
+                "Para habilitar o ad4, é necessário fornecer o autogrid4 e gerar os mapas."
+            )
         ligand_name = self._ligand_display_name(ligand_path)
         scoring_suffix = safe_stem(
             Path(str(self.parameters.get("scoring_function", "vina")))

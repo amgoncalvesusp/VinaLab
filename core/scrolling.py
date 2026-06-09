@@ -4,7 +4,13 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QAbstractScrollArea, QFrame, QScrollArea, QSizePolicy, QWidget
+from PySide6.QtWidgets import (
+    QAbstractScrollArea,
+    QFrame,
+    QScrollArea,
+    QSizePolicy,
+    QWidget,
+)
 
 
 class ScrollManager:
@@ -15,7 +21,9 @@ class ScrollManager:
     PAGE_STEP = 360
 
     @classmethod
-    def wrap(cls, content: QWidget, object_name: str = "tab_scroll_area") -> QScrollArea:
+    def wrap(
+        cls, content: QWidget, object_name: str = "tab_scroll_area"
+    ) -> QScrollArea:
         """Wrap a content widget in a responsive vertical scroll area."""
         scroll_area = QScrollArea()
         scroll_area.setObjectName(object_name)
@@ -25,6 +33,13 @@ class ScrollManager:
         scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        # With widgetResizable the content is squeezed to the viewport width and a
+        # horizontal scrollbar never appears. Pin the content to its natural width
+        # so a horizontal bar shows when the pane is too narrow to reveal every
+        # option, while the vertical bar handles depth.
+        natural_width = content.sizeHint().width()
+        if natural_width > 0:
+            content.setMinimumWidth(natural_width)
         cls.optimize(scroll_area)
         return scroll_area
 

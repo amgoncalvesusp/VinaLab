@@ -16,7 +16,7 @@ class I18n:
             "pt": "VinaLab — Docking Molecular",
             "en": "VinaLab — Molecular Docking",
         },
-        "window_title": {"pt": "VinaLab v0.0.3", "en": "VinaLab v0.0.3"},
+        "window_title": {"pt": "VinaLab v0.0.5", "en": "VinaLab v0.0.5"},
         "author_label": {
             "pt": "Desenvolvido por Adriano Marques Gonçalves — UNIARA",
             "en": "Developed by Adriano Marques Gonçalves — UNIARA",
@@ -38,6 +38,8 @@ class I18n:
         "menu_help": {"pt": "Ajuda", "en": "Help"},
         "menu_language": {"pt": "Idioma", "en": "Language"},
         "menu_analysis": {"pt": "Análise", "en": "Analysis"},
+        "mw_exit_title": {"pt": "Sair do VinaLab", "en": "Quit VinaLab"},
+        "mw_exit_question": {"pt": "Deseja sair?", "en": "Do you want to quit?"},
         "export_complex": {"pt": "Exportar complexo", "en": "Export Complex"},
         "generate_report": {"pt": "Gerar relatório", "en": "Generate Report"},
         "validate_protocol": {"pt": "Validar protocolo", "en": "Validate Protocol"},

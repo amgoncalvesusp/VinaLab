@@ -2,7 +2,7 @@
 $ErrorActionPreference = "Stop"
 
 $AppName = "VinaLab"
-$Version = "0.0.3"
+$Version = "0.0.5"
 $InstallRoot = Join-Path $env:LOCALAPPDATA $AppName
 $SourceDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ExeSource = Join-Path $SourceDir "VinaLab.exe"

@@ -7,7 +7,7 @@ import subprocess
 import sys
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QActionGroup
+from PySide6.QtGui import QAction, QActionGroup, QCloseEvent
 from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
@@ -338,3 +338,17 @@ class MainWindow(QMainWindow):
             return json.loads(self.prefs_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             return {}
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        """Ask the user to confirm before closing the application."""
+        reply = QMessageBox.question(
+            self,
+            I18n.get("mw_exit_title", self.lang),
+            I18n.get("mw_exit_question", self.lang),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            event.accept()
+        else:
+            event.ignore()

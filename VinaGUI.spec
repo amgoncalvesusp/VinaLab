@@ -38,7 +38,9 @@ datas = [
 # ``import meeko`` raises FileNotFoundError for Bio/Align/substitution_matrices/data,
 # which made the frozen environment check report FALHA for meeko. Collect the full
 # dependency chain (code + data + binaries) so the import succeeds frozen.
-for _package in ("rdkit", "meeko", "prody", "Bio"):
+# MDAnalysis (interaction analysis) and plotly (interactive charts) also ship
+# compiled extensions / data files that need full collection to import frozen.
+for _package in ("rdkit", "meeko", "prody", "Bio", "MDAnalysis", "plotly"):
     _datas, _binaries, _hidden = collect_all(_package)
     datas += _datas
     binaries += _binaries
