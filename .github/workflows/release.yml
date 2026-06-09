@@ -64,7 +64,7 @@ jobs:
         run: python -m pytest tests -q --tb=short
 
       - name: Build executable
-        run: python -m PyInstaller --noconfirm --clean VinaLab.spec
+        run: python -m PyInstaller --noconfirm --clean VinaGUI.spec
 
       - name: Package artifacts
         run: python scripts/package_release.py --output-dir artifacts
@@ -93,5 +93,5 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          body_path: RELEASE_NOTES_0.0.4.md
+          body_path: RELEASE_NOTES_0.0.5.md
           files: release-assets/**/*
