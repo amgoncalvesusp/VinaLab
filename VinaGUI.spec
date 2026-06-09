@@ -64,8 +64,16 @@ excludes = [
 ]
 
 
+# Entry point must be main.py, not launcher.py. launcher.py is the SOURCE-mode
+# bootstrap (creates .venv, pip-installs, then spawns ``python main.py`` as a
+# subprocess). In a frozen build there is no .venv interpreter and main.py is not
+# a standalone runnable script, so that subprocess launch never starts the GUI —
+# the environment screen would pass but the app would never open. main.py already
+# has the correct frozen branch (sys.frozen -> skip bootstrap, run Qt in-process),
+# and using it as the entry makes PyInstaller analyze and bundle the full import
+# chain (mainwindow, tabs, ui, core) as real modules.
 a = Analysis(
-    ['launcher.py'],
+    ['main.py'],
     pathex=[],
     binaries=binaries,
     datas=datas,
