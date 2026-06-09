@@ -10,8 +10,9 @@ __pycache__/
 environment_status.json
 release/
 artifacts/
-# Bundled GNINA build is large (~200 MB); shipped inside the built exe, not in git.
-tools/gnina/
+# tools/gnina IS tracked: the CI runner does a clean checkout, so the GNINA
+# binary+models must be in git for PyInstaller to bundle them into the exe.
+# Largest file is ~19 MB (under GitHub's 100 MB limit); total ~200 MB.
 # Build/upload transcripts
 build_log.txt
 upload_log.txt
