@@ -27,7 +27,9 @@ def main() -> int:
             vina_status = {"ok": True}
         else:
             missing = manager.check_missing()
-            vina_status = manager.verify_autodock_vina() if not missing else {"ok": False}
+            vina_status = (
+                manager.verify_autodock_vina() if not missing else {"ok": False}
+            )
         if missing or not vina_status.get("ok"):
             launcher_path = Path(__file__).resolve().parent / "launcher.py"
             if launcher_path.exists():
@@ -47,12 +49,17 @@ def main() -> int:
         from PySide6.QtWidgets import QApplication
 
         from core.responsive import ResponsiveManager
+        from core.scrolling import WheelGuard
         from mainwindow import MainWindow
 
         app = QApplication(sys.argv)
         app.setApplicationName("VinaLab")
         app.setStartDragTime(500)
         app.setFont(QFont("Segoe UI", 9))
+
+        # Keep a reference on the app so the guard is not garbage-collected.
+        app._wheel_guard = WheelGuard()
+        app.installEventFilter(app._wheel_guard)
 
         style_path = resource_path("ui/style.qss")
         if style_path.exists():

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.0.6 - 2026-06-09
+
+- Design profissional modernizado: tema claro com tokens de cor consistentes, tipografia e espacamento calibrados.
+- Barras de rolagem draggaveis (H+V) em todos os paineis laterais com espessura aumentada para melhor usabilidade.
+- Protecao contra alteracao acidental de parametros via scroll do mouse: roda do mouse em spinbox/combobox rola o painel sem mudar o valor.
+- Handles do splitter redesenhados para nao confundir com barras de rolagem.
+
 ## 0.0.5 - 2026-06-09
 
 - Ligantes MOL2 e SDF convertem para PDBQT via Open Babel como fallback.
