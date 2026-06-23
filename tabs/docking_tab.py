@@ -1415,7 +1415,7 @@ class DockingTab(QWidget):
             )
             return
         missing_required = [
-            package["pip_name"]
+            package["name"]
             for package in report.get("packages", [])
             if package.get("required", True) and not package.get("installed", False)
         ]
