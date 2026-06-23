@@ -19,15 +19,11 @@ import importlib.util
 import logging
 import math
 from pathlib import Path
-import shutil
-import subprocess
 import sys
 
 from core.file_utils import validate_ligand_pdbqt
 
 logger = logging.getLogger(__name__)
-
-NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0
 
 
 @dataclass(frozen=True)
@@ -199,11 +195,11 @@ class FileConverter:
         variants), matching the "go through an intermediate and let the converter
         do it" approach.
         """
-        result = FileConverter._run_openbabel(
+        result = FileConverter._convert_via_openbabel(
             input_path,
             output_path,
-            ["-h", "--partialcharge", "gasteiger"],
-            "RDKit/Meeko indisponível para o ligante.",
+            receptor=False,
+            previous_error="RDKit/Meeko indisponível para o ligante.",
         )
         if not result.success or not output_path.exists():
             return result
@@ -354,62 +350,106 @@ class FileConverter:
     def convert_pdb_to_pdbqt_receptor(
         input_path: Path, output_path: Path
     ) -> ConversionResult:
-        """Convert a receptor PDB file to PDBQT using mk_prepare_receptor.py, then OpenBabel fallback."""
-        if shutil.which("mk_prepare_receptor.py"):
-            try:
-                result = subprocess.run(
-                    [
-                        "mk_prepare_receptor.py",
-                        "-i",
-                        str(input_path),
-                        "-o",
-                        str(output_path),
-                    ],
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                    creationflags=NO_WINDOW,
-                )
-                return ConversionResult(True, output_path, result.stdout, result.stderr)
-            except subprocess.CalledProcessError as primary_error:
-                primary_log = primary_error.stderr or str(primary_error)
-            except OSError as primary_error:
-                primary_log = str(primary_error)
-        else:
-            primary_log = "mk_prepare_receptor.py não está disponível."
-        return FileConverter._run_openbabel(
-            input_path, output_path, ["-xr"], primary_log
+        """Convert a receptor PDB to PDBQT with Meeko in-process, OpenBabel fallback."""
+        meeko_result = FileConverter._convert_receptor_via_meeko(input_path, output_path)
+        if meeko_result is not None and meeko_result.success:
+            return meeko_result
+        primary_log = (
+            meeko_result.errors
+            if meeko_result is not None
+            else "Meeko (mk_prepare_receptor) indisponível."
+        )
+        return FileConverter._convert_via_openbabel(
+            input_path, output_path, receptor=True, previous_error=primary_log
+        )
+
+    @staticmethod
+    def _convert_receptor_via_meeko(
+        input_path: Path, output_path: Path
+    ) -> ConversionResult | None:
+        """Prepare a receptor PDBQT in-process via Meeko's CLI entry point.
+
+        Meeko ships ``mk_prepare_receptor`` only as a console-script executable,
+        which PyInstaller does not bundle, so the frozen app cannot reach it with
+        ``subprocess``/``shutil.which`` (that was the "mk_prepare_receptor.py não
+        está disponível" failure). The same code is importable as
+        ``meeko.cli.mk_prepare_receptor`` — already collected into the bundle — so
+        we run its ``main()`` in-process. Meeko 0.7 arguments: ``--read_pdb`` reads
+        a PDB without ProDy, ``-p`` writes the PDBQT (``-o`` is only a basename),
+        and ``--allow_bad_res`` drops residues with missing atoms instead of
+        aborting. Returns ``None`` when Meeko cannot be imported so the caller
+        falls back to Open Babel.
+        """
+        try:
+            from meeko.cli import mk_prepare_receptor as receptor_cli
+        except Exception:  # noqa: BLE001 - missing/broken Meeko -> OpenBabel fallback
+            return None
+
+        import contextlib
+        import io
+
+        argv = [
+            "mk_prepare_receptor",
+            "--read_pdb",
+            str(input_path),
+            "-o",
+            str(output_path.with_suffix("")),
+            "-p",
+            str(output_path),
+            "--allow_bad_res",
+        ]
+        captured = io.StringIO()
+        saved_argv = sys.argv
+        exit_code: int = 0
+        try:
+            sys.argv = argv
+            with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(
+                captured
+            ):
+                try:
+                    receptor_cli.main()
+                except SystemExit as exit_signal:
+                    exit_code = (
+                        exit_signal.code
+                        if isinstance(exit_signal.code, int)
+                        else 0
+                    )
+        except Exception as exc:  # noqa: BLE001 - report and let caller fall back
+            return ConversionResult(
+                False,
+                output_path,
+                captured.getvalue(),
+                f"Meeko (mk_prepare_receptor) falhou: {exc}",
+            )
+        finally:
+            sys.argv = saved_argv
+
+        if output_path.exists() and output_path.stat().st_size > 0:
+            return ConversionResult(
+                True,
+                output_path,
+                captured.getvalue()
+                or "Receptor preparado com Meeko (mk_prepare_receptor, em processo).",
+                "",
+            )
+        return ConversionResult(
+            False,
+            output_path,
+            captured.getvalue(),
+            f"Meeko não gerou o PDBQT do receptor (código {exit_code}).",
         )
 
     @staticmethod
     def convert_mol2_to_pdbqt_receptor(
         input_path: Path, output_path: Path
     ) -> ConversionResult:
-        """Convert a receptor MOL2 file to PDBQT via MOL2 -> PDB (Open Babel) -> PDBQT receptor."""
-        intermediate_pdb = output_path.with_suffix(".tmp.pdb")
-        obabel_result = FileConverter._run_openbabel(
+        """Convert a receptor MOL2 file to PDBQT with Open Babel (rigid receptor)."""
+        return FileConverter._convert_via_openbabel(
             input_path,
-            intermediate_pdb,
-            [],
-            "MOL2 receptor requer Open Babel para gerar PDB intermediário.",
+            output_path,
+            receptor=True,
+            previous_error="MOL2 receptor requer Open Babel.",
         )
-        if not obabel_result.success or not intermediate_pdb.exists():
-            return ConversionResult(
-                False,
-                output_path,
-                obabel_result.log,
-                obabel_result.errors
-                or "Falha ao converter MOL2 -> PDB com Open Babel.",
-            )
-        try:
-            return FileConverter.convert_pdb_to_pdbqt_receptor(
-                intermediate_pdb, output_path
-            )
-        finally:
-            try:
-                intermediate_pdb.unlink(missing_ok=True)
-            except OSError:
-                pass
 
     @staticmethod
     def auto_convert(input_path: Path, molecule_type: str) -> ConversionResult:
@@ -456,56 +496,93 @@ class FileConverter:
 
     @staticmethod
     def check_dependencies() -> dict:
-        """Return availability of conversion libraries and command-line tools."""
-        obabel_name = "obabel.exe" if sys.platform.startswith("win") else "obabel"
-        scripts_obabel = Path(sys.executable).resolve().parent / obabel_name
+        """Return availability of conversion libraries (all used in-process)."""
+        meeko_receptor = importlib.util.find_spec("meeko") is not None and (
+            importlib.util.find_spec("meeko.cli.mk_prepare_receptor") is not None
+        )
+        openbabel_available = importlib.util.find_spec("openbabel") is not None
         return {
             "rdkit": importlib.util.find_spec("rdkit") is not None,
             "meeko": importlib.util.find_spec("meeko") is not None,
-            "openbabel_py": importlib.util.find_spec("openbabel") is not None,
-            "obabel_cli": shutil.which("obabel") is not None or scripts_obabel.exists(),
-            "mk_prepare_receptor": shutil.which("mk_prepare_receptor.py") is not None,
+            "openbabel_py": openbabel_available,
+            "obabel_cli": openbabel_available,
+            "mk_prepare_receptor": meeko_receptor,
         }
 
     @staticmethod
-    def _run_openbabel(
-        input_path: Path, output_path: Path, extra_args: list[str], previous_error: str
+    def _obabel_input_format(input_path: Path) -> str:
+        """Map a file suffix to an Open Babel input format string."""
+        suffix = input_path.suffix.lower().lstrip(".")
+        return {
+            "pdb": "pdb",
+            "ent": "pdb",
+            "mol2": "mol2",
+            "sdf": "sdf",
+            "mol": "mol",
+            "pdbqt": "pdbqt",
+            "xyz": "xyz",
+            "cif": "cif",
+            "mmcif": "mmcif",
+        }.get(suffix, "pdb")
+
+    @staticmethod
+    def _convert_via_openbabel(
+        input_path: Path,
+        output_path: Path,
+        receptor: bool,
+        previous_error: str,
     ) -> ConversionResult:
-        """Run OpenBabel CLI conversion as a fallback."""
-        obabel = shutil.which("obabel")
-        if obabel is None:
-            candidate = Path(sys.executable).resolve().parent / (
-                "obabel.exe" if sys.platform.startswith("win") else "obabel"
-            )
-            obabel = str(candidate) if candidate.exists() else None
-        if obabel is None:
+        """Convert to PDBQT in-process with Open Babel's Python API (pybel).
+
+        Using the ``openbabel`` module instead of spawning ``obabel.exe`` removes
+        the dependency on a CLI being on PATH (it never is in the frozen app) and
+        lets openbabel-wheel self-configure its plugin/data directories on import.
+        ``opt={"r": True}`` is Open Babel's receptor mode (the ``-xr`` flag): a
+        rigid receptor with no torsion tree. Gasteiger partial charges are written
+        by Open Babel's PDBQT writer.
+        """
+        try:
+            from openbabel import pybel
+        except Exception as exc:  # noqa: BLE001 - no RDKit/Meeko and no Open Babel
             return ConversionResult(
                 False,
                 output_path,
                 "",
-                f"{previous_error}\nMeeko+RDKit e OpenBabel não estão disponíveis.",
+                f"{previous_error}\nMeeko+RDKit e OpenBabel não estão disponíveis: {exc}",
             )
+
+        input_format = FileConverter._obabel_input_format(input_path)
         try:
-            result = subprocess.run(
-                [obabel, str(input_path), "-O", str(output_path), *extra_args],
-                capture_output=True,
-                text=True,
-                check=True,
-                creationflags=NO_WINDOW,
+            molecule = next(pybel.readfile(input_format, str(input_path)))
+            molecule.OBMol.AddHydrogens()
+            options = {"r": True} if receptor else {}
+            writer = pybel.Outputfile(
+                "pdbqt", str(output_path), overwrite=True, opt=options
             )
-            return ConversionResult(
-                True,
-                output_path,
-                result.stdout or "Convertido com OpenBabel.",
-                result.stderr,
-            )
-        except subprocess.CalledProcessError as fallback_error:
+            writer.write(molecule)
+            writer.close()
+        except Exception as exc:  # noqa: BLE001 - surface the underlying Open Babel error
             return ConversionResult(
                 False,
                 output_path,
-                fallback_error.stdout or "",
-                f"{previous_error}\n{fallback_error.stderr}",
+                "",
+                f"{previous_error}\nOpen Babel falhou: {exc}",
             )
+
+        if output_path.exists() and output_path.stat().st_size > 0:
+            descriptor = "Receptor" if receptor else "Ligante"
+            return ConversionResult(
+                True,
+                output_path,
+                f"{descriptor} convertido com Open Babel (API em processo).",
+                "",
+            )
+        return ConversionResult(
+            False,
+            output_path,
+            "",
+            f"{previous_error}\nOpen Babel não gerou o PDBQT.",
+        )
 
     @staticmethod
     def _validated_ligand_result(

@@ -17,6 +17,8 @@ hiddenimports = [
     "scipy",
     "gemmi",
     "openbabel",
+    "openbabel.pybel",
+    "meeko.cli.mk_prepare_receptor",
     "wheel",
     "PySide6.QtWidgets",
     "PySide6.QtCore",
@@ -50,11 +52,44 @@ datas = [
 # the partial collection did not carry into the bundle. collect_all pulls every
 # Qt6 DLL, the platform/imageformats plugins, the QtWebEngine process and its
 # resources, so the frozen app no longer depends on a system Qt install.
-for _package in ("PySide6", "rdkit", "meeko", "prody", "Bio", "MDAnalysis", "plotly"):
+# openbabel (openbabel-wheel) ships obabel's compiled extension plus its format
+# plugins (*.obf) and data/lib directories. The receptor/MOL2 conversion path
+# uses the openbabel Python API (pybel) in-process, so the whole package — code,
+# binaries and data — must travel or "OpenBabel não está disponível" appears in
+# the frozen app. The package self-configures BABEL_LIBDIR/BABEL_DATADIR on import
+# relative to its bundled location, so no runtime env wiring is needed.
+for _package in (
+    "PySide6",
+    "rdkit",
+    "meeko",
+    "prody",
+    "Bio",
+    "MDAnalysis",
+    "plotly",
+    "openbabel",
+):
     _datas, _binaries, _hidden = collect_all(_package)
     datas += _datas
     binaries += _binaries
     hiddenimports += _hidden
+
+
+# openbabel-wheel keeps its private shared libraries in a sibling
+# "openbabel_wheel.libs" directory (the delvewheel layout) that collect_all does
+# not reach. openbabel/__init__.py adds that directory to the DLL search path at
+# import time via a path relative to the package, so the DLLs must be bundled at
+# the same relative location for the compiled extension to load in the frozen app.
+import importlib.util as _importlib_util
+
+_openbabel_spec = _importlib_util.find_spec("openbabel")
+if _openbabel_spec is not None and _openbabel_spec.origin:
+    _openbabel_libs = os.path.join(
+        os.path.dirname(os.path.dirname(_openbabel_spec.origin)),
+        "openbabel_wheel.libs",
+    )
+    if os.path.isdir(_openbabel_libs):
+        for _dll in glob.glob(os.path.join(_openbabel_libs, "*.dll")):
+            binaries.append((_dll, "openbabel_wheel.libs"))
 
 
 # Bundle the Microsoft Visual C++ runtime. Qt6/PySide6 are built with MSVC and

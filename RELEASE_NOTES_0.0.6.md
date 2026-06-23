@@ -21,3 +21,14 @@
 ### Outros
 - Handles do splitter redesenhados para não serem confundidos com barras de rolagem
 - Arquivos de diagnóstico temporários removidos do repositório
+
+## Correções
+
+- Empacotamento corrigido para que o app abra em qualquer computador: DLLs do
+  PySide6/Qt6 e o runtime do Microsoft Visual C++ agora viajam no executável
+  (resolve o erro "DLL load failed" / DLL ausente em máquinas limpas)
+- Corrigido travamento na abertura (KeyError em verificação de dependências)
+- Conversão de receptor para PDBQT agora funciona no app empacotado: usa o Meeko
+  (mk_prepare_receptor) em processo, com Open Babel como alternativa, sem depender
+  de ferramentas de linha de comando externas. O Open Babel também passa a ser
+  empacotado para a conversão de receptores e arquivos MOL2
