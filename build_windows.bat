@@ -57,7 +57,7 @@ if errorlevel 1 (
     )
 )
 
-"%PYTHON_EXE%" -m PyInstaller --noconfirm --clean VinaLab.spec
+"%PYTHON_EXE%" -m PyInstaller --noconfirm --clean VinaGUI.spec
 
 if errorlevel 1 (
     echo ERRO: PyInstaller falhou. Verifique os logs acima.
