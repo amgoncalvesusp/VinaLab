@@ -6,6 +6,7 @@ import sys
 import tempfile
 import types
 import unittest
+from unittest import mock
 
 qtcore = types.ModuleType("PySide6.QtCore")
 
@@ -25,7 +26,11 @@ qtcore.Signal = _DummySignal
 sys.modules.setdefault("PySide6", types.ModuleType("PySide6"))
 sys.modules["PySide6.QtCore"] = qtcore
 
-from core.docking_engine import discover_external_scoring_functions, extract_pose_model
+from core.docking_engine import (
+    discover_external_scoring_functions,
+    extract_pose_model,
+)
+from core.native_tools import find_native_executable, native_tool_env, native_tool_starts
 from core.file_utils import pdbqt_receptor_atoms, validate_ligand_pdbqt
 
 
@@ -38,6 +43,39 @@ class DockingHelperTests(unittest.TestCase):
         self.assertIn("DeltaVinaRF20", labels)
         self.assertIn("DeltaVinaXGB-Light", labels)
         self.assertIn("RTMScore", labels)
+
+    def test_native_tool_env_adds_tool_directory_for_dlls_and_plugins(self) -> None:
+        """Bundled GNINA must find sibling DLLs and OpenBabel plugin modules."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tool_dir = Path(tmpdir) / "gnina"
+            tool_dir.mkdir()
+            tool_path = tool_dir / "gnina.exe"
+            tool_path.write_text("", encoding="utf-8")
+            (tool_dir / "formats_common.obf").write_text("", encoding="utf-8")
+
+            env = native_tool_env(tool_path, {"PATH": "C:\\Windows\\System32"})
+
+        resolved_tool_dir = str(tool_dir.resolve())
+        self.assertTrue(env["PATH"].startswith(resolved_tool_dir))
+        self.assertEqual(env["BABEL_LIBDIR"], resolved_tool_dir)
+
+    def test_find_native_executable_prefers_python_scripts_before_path(self) -> None:
+        """Bundled CLI discovery should not accidentally prefer unrelated PATH tools."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            scripts_dir = Path(tmpdir) / "Scripts"
+            scripts_dir.mkdir()
+            tool_path = scripts_dir / "obabel.exe"
+            tool_path.write_text("", encoding="utf-8")
+            with mock.patch("sys.executable", str(scripts_dir / "python.exe")):
+                found = find_native_executable(("obabel.exe",), "openbabel")
+        self.assertEqual(found, tool_path.resolve())
+
+    def test_native_tool_starts_rejects_non_executable_payload(self) -> None:
+        """A discovered native tool must actually launch before it is advertised."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tool_path = Path(tmpdir) / "gnina.exe"
+            tool_path.write_text("", encoding="utf-8")
+            self.assertFalse(native_tool_starts(tool_path, timeout=1))
 
     def test_extract_pose_model_returns_requested_block(self) -> None:
         """Only the requested MODEL block should be returned."""

@@ -6,21 +6,20 @@ VinaLab is a desktop interface for AutoDock Vina 1.2.x. It helps prepare PDBQT i
 
 ### Downloads
 
-Stable releases are published from Git tags such as `v0.0.2`. The release workflow builds native packages for:
+Stable releases are published from Git tags such as `v0.0.6`. The current release workflow builds Windows x64 packages:
 
-- Windows: installer zip and portable executable zip
-- macOS: native executable archive
-- Linux: native executable archive
+- Windows setup installer: `VinaLab-<version>-windows-x64-setup.exe`
+- Windows portable archive: `VinaLab-<version>-windows-x64-portable.zip`
 
 ### Windows
 
-Download `VinaLab-<version>-windows-x64-installer.zip`, extract it, and run:
+Download and run the setup installer:
 
 ```bat
-Instalar_VinaLab.bat
+VinaLab-<version>-windows-x64-setup.exe
 ```
 
-The installer copies `VinaLab.exe` to `%LOCALAPPDATA%\VinaLab` and creates a desktop shortcut.
+The setup installer installs `VinaLab.exe`, registers an uninstaller, and creates shortcuts.
 
 The portable package can also be extracted and run directly:
 
@@ -28,23 +27,7 @@ The portable package can also be extracted and run directly:
 VinaLab.exe
 ```
 
-### macOS
-
-Download the macOS archive, extract it, allow execution if needed, and run the bundled `VinaLab` executable.
-
-```bash
-chmod +x VinaLab
-./VinaLab
-```
-
-### Linux
-
-Download the Linux archive, extract it, allow execution if needed, and run the bundled `VinaLab` executable.
-
-```bash
-chmod +x VinaLab
-./VinaLab
-```
+macOS and Linux are supported from source only in this release.
 
 ### Running From Source
 
@@ -77,53 +60,36 @@ Optional scoring methods that depend on large runtimes, such as Torch/DGL, may b
 
 ---
 
-## Português
+## Portugues
 
-VinaLab é uma interface desktop para AutoDock Vina 1.2.x. Ele ajuda a preparar entradas PDBQT, executar docking molecular, inspecionar resultados, visualizar poses e gerar relatórios.
+VinaLab e uma interface desktop para AutoDock Vina 1.2.x. Ele ajuda a preparar entradas PDBQT, executar docking molecular, inspecionar resultados, visualizar poses e gerar relatorios.
 
 ### Downloads
 
-Releases estáveis são publicados a partir de tags Git como `v0.0.2`. O workflow de release gera pacotes nativos para:
+Releases estaveis sao publicados a partir de tags Git como `v0.0.6`. O workflow de release atual gera pacotes Windows x64:
 
-- Windows: zip com instalador e zip portátil com executável
-- macOS: arquivo compactado com executável nativo
-- Linux: arquivo compactado com executável nativo
+- Instalador Windows: `VinaLab-<versao>-windows-x64-setup.exe`
+- Pacote portatil Windows: `VinaLab-<versao>-windows-x64-portable.zip`
 
 ### Windows
 
-Baixe `VinaLab-<versão>-windows-x64-installer.zip`, extraia o pacote e execute:
+Baixe e execute o instalador:
 
 ```bat
-Instalar_VinaLab.bat
+VinaLab-<versao>-windows-x64-setup.exe
 ```
 
-O instalador copia `VinaLab.exe` para `%LOCALAPPDATA%\VinaLab` e cria um atalho na Área de Trabalho.
+O instalador instala `VinaLab.exe`, registra um desinstalador e cria atalhos.
 
-O pacote portátil também pode ser extraído e executado diretamente:
+O pacote portatil tambem pode ser extraido e executado diretamente:
 
 ```bat
 VinaLab.exe
 ```
 
-### macOS
+macOS e Linux sao suportados pelo codigo-fonte nesta release.
 
-Baixe o arquivo para macOS, extraia, permita execução se necessário e execute o binário `VinaLab`.
-
-```bash
-chmod +x VinaLab
-./VinaLab
-```
-
-### Linux
-
-Baixe o arquivo para Linux, extraia, permita execução se necessário e execute o binário `VinaLab`.
-
-```bash
-chmod +x VinaLab
-./VinaLab
-```
-
-### Execução Pelo Código-Fonte
+### Execucao Pelo Codigo-Fonte
 
 Instale Python 3.10+ e execute:
 
@@ -143,11 +109,11 @@ No Windows, ative o ambiente com:
 
 ### Logs
 
-Logs são gravados em:
+Os logs sao gravados em:
 
 - Pacote Windows instalado: `%LOCALAPPDATA%\VinaLab\logs`
-- Código-fonte: `logs/`
+- Checkout pelo codigo-fonte: `logs/`
 
-### Runtimes Opcionais de Pontuação
+### Runtimes Opcionais de Pontuacao
 
-Métodos opcionais de pontuação que dependem de runtimes grandes, como Torch/DGL, podem aparecer como desativados até que suas dependências sejam instaladas no ambiente ativo.
+Metodos opcionais de pontuacao que dependem de runtimes grandes, como Torch/DGL, podem ficar desativados ate que suas dependencias sejam instaladas no ambiente ativo.

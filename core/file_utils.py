@@ -677,16 +677,11 @@ def _rewrite_ligand_charges_with_obabel(
     filepath: Path, current_lines: list[str]
 ) -> list[str] | None:
     """Open Babel fallback: regenerate PDBQT and copy its charges into current lines."""
-    import shutil
     import subprocess
     import sys
+    from core.native_tools import find_obabel_executable, native_tool_env
 
-    obabel = shutil.which("obabel")
-    if obabel is None:
-        candidate = Path(sys.executable).resolve().parent / (
-            "obabel.exe" if sys.platform.startswith("win") else "obabel"
-        )
-        obabel = str(candidate) if candidate.exists() else None
+    obabel = find_obabel_executable()
     if obabel is None:
         return None
 
@@ -698,13 +693,14 @@ def _rewrite_ligand_charges_with_obabel(
     try:
         completed = subprocess.run(
             [
-                obabel,
+                str(obabel),
                 str(filepath),
                 "-O",
                 str(regen_path),
                 "--partialcharge",
                 "gasteiger",
             ],
+            env=native_tool_env(obabel),
             capture_output=True,
             text=True,
             check=False,

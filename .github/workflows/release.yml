@@ -36,6 +36,9 @@ jobs:
           cache: "pip"
           cache-dependency-path: requirements-build.txt
 
+      - name: Check release metadata
+        run: python scripts/check_release_consistency.py
+
       - name: Install Linux system libraries
         if: runner.os == 'Linux'
         run: |
@@ -60,14 +63,48 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install -r requirements-build.txt
 
+      - name: Check runtime dependencies
+        run: python scripts/check_runtime_dependencies.py
+
       - name: Run tests
         run: python -m pytest tests -q --tb=short
 
       - name: Build executable
         run: python -m PyInstaller --noconfirm --clean VinaGUI.spec
 
+      - name: Install Inno Setup
+        if: runner.os == 'Windows'
+        run: choco install innosetup --no-progress -y
+
+      - name: Build Windows setup installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$version" "packaging/windows/VinaLab.iss"
+
       - name: Package artifacts
         run: python scripts/package_release.py --output-dir artifacts
+
+      - name: Verify Windows release artifacts
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          $setup = "artifacts\VinaLab-$version-windows-x64-setup.exe"
+          $portable = "artifacts\VinaLab-$version-windows-x64-portable.zip"
+          if (!(Test-Path $setup)) { throw "Missing setup installer: $setup" }
+          if (!(Test-Path $portable)) { throw "Missing portable archive: $portable" }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path $portable))
+          try {
+            $names = $zip.Entries | ForEach-Object { $_.FullName }
+            foreach ($required in @("VinaLab.exe", "VERSION", "README.md", "RELEASE_NOTES_$version.md")) {
+              if ($names -notcontains $required) { throw "Portable archive missing $required" }
+            }
+          } finally {
+            $zip.Dispose()
+          }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -95,3 +132,5 @@ jobs:
         with:
           body_path: RELEASE_NOTES_0.0.6.md
           files: release-assets/**/*
+          overwrite_files: true
+          fail_on_unmatched_files: true

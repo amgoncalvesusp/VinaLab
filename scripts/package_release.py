@@ -46,6 +46,7 @@ def package_windows(version: str, dist_dir: Path, output_dir: Path) -> list[Path
 
     portable = output_dir / f"{APP_NAME}-{version}-windows-x64-portable.zip"
     installer = output_dir / f"{APP_NAME}-{version}-windows-x64-installer.zip"
+    setup = output_dir / f"{APP_NAME}-{version}-windows-x64-setup.exe"
 
     write_zip(
         portable,
@@ -56,18 +57,26 @@ def package_windows(version: str, dist_dir: Path, output_dir: Path) -> list[Path
             (Path("VERSION"), "VERSION"),
         ],
     )
-    write_zip(
-        installer,
-        [
-            (exe_path, f"{APP_NAME}.exe"),
-            (Path("packaging/windows/Instalar_VinaLab.bat"), "Instalar_VinaLab.bat"),
-            (Path("packaging/windows/install_windows.ps1"), "install_windows.ps1"),
-            (Path("README.md"), "README.md"),
-            (release_notes_path(version), f"RELEASE_NOTES_{version}.md"),
-            (Path("VERSION"), "VERSION"),
-        ],
-    )
-    return [portable, installer]
+    artifacts = [portable]
+    if setup.exists():
+        artifacts.append(setup)
+    else:
+        write_zip(
+            installer,
+            [
+                (exe_path, f"{APP_NAME}.exe"),
+                (
+                    Path("packaging/windows/Instalar_VinaLab.bat"),
+                    "Instalar_VinaLab.bat",
+                ),
+                (Path("packaging/windows/install_windows.ps1"), "install_windows.ps1"),
+                (Path("README.md"), "README.md"),
+                (release_notes_path(version), f"RELEASE_NOTES_{version}.md"),
+                (Path("VERSION"), "VERSION"),
+            ],
+        )
+        artifacts.append(installer)
+    return artifacts
 
 
 def package_unix(version: str, dist_dir: Path, output_dir: Path, target: str) -> Path:

@@ -49,6 +49,7 @@ except ImportError:  # pragma: no cover - installer should provide PySide6-WebEn
     QWebEngineView = None
 
 from core.docking_engine import extract_pose_model, find_obabel_executable
+from core.native_tools import native_tool_env
 from core.file_utils import clean_pdbqt_text
 from core.i18n import I18n
 from core.rmsd import symmetry_corrected_rmsd
@@ -663,8 +664,10 @@ class ExportComplexDialog(QDialog):
             return
 
         output_path = output_dir / f"{pose_basename}.{export_format}"
+        obabel = find_obabel_executable()
         completed = subprocess.run(
-            [find_obabel_executable(), str(pose_pdbqt), "-O", str(output_path)],
+            [obabel, str(pose_pdbqt), "-O", str(output_path)],
+            env=native_tool_env(Path(obabel)),
             capture_output=True,
             text=True,
             check=False,

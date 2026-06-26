@@ -13,7 +13,6 @@ Scoring-function ranking based on benchmark literature (2021-2025):
 
 import json
 from pathlib import Path
-import shutil
 
 from PySide6.QtCore import Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
@@ -48,6 +47,7 @@ from core.docking_engine import (
 from core.environment_manager import EnvironmentManager
 from core.file_utils import is_pdbqt_file, pdbqt_coordinate_bounds, pdbqt_receptor_atoms
 from core.i18n import I18n
+from core.native_tools import find_gnina_executable
 from core.scrolling import ScrollManager
 
 
@@ -1574,18 +1574,4 @@ class DockingTab(QWidget):
 
 def _gnina_executable() -> Path | None:
     """Return a GNINA executable from PATH or the local tools directory."""
-    path_value = shutil.which("gnina") or shutil.which("gnina.exe")
-    if path_value:
-        return Path(path_value)
-    candidates = [
-        Path(__file__).resolve().parents[1] / "tools" / "gnina" / "gnina.exe",
-        Path.cwd() / "tools" / "gnina" / "gnina.exe",
-    ]
-    return next(
-        (
-            candidate
-            for candidate in candidates
-            if candidate.exists() and candidate.is_file()
-        ),
-        None,
-    )
+    return find_gnina_executable()

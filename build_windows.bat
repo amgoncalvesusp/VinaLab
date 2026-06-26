@@ -30,7 +30,8 @@ if exist "tests" (
     ) else (
         "%PYTHON_EXE%" -m pytest tests/ -q --tb=short
         if errorlevel 1 (
-            echo AVISO: Alguns testes falharam. Continuando o build...
+            echo ERRO: Alguns testes falharam. Build interrompido.
+            pause & exit /b 1
         )
     )
 ) else (

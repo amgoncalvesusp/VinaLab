@@ -2,9 +2,13 @@
 $ErrorActionPreference = "Stop"
 
 $AppName = "VinaLab"
-$Version = "0.0.6"
 $InstallRoot = Join-Path $env:LOCALAPPDATA $AppName
 $SourceDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$VersionFile = Join-Path $SourceDir "VERSION"
+$Version = "0.0.6"
+if (Test-Path $VersionFile) {
+    $Version = (Get-Content -Raw -Path $VersionFile).Trim()
+}
 $ExeSource = Join-Path $SourceDir "VinaLab.exe"
 $ExeTarget = Join-Path $InstallRoot "VinaLab.exe"
 $ShortcutPath = Join-Path ([Environment]::GetFolderPath("Desktop")) "VinaLab.lnk"

@@ -25,6 +25,11 @@ from core.file_utils import (
     validate_ligand_pdbqt,
     validate_pdbqt_charges,
 )
+from core.native_tools import (
+    find_obabel_executable as find_obabel_path,
+    find_gnina_executable,
+    native_tool_env,
+)
 
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0
 
@@ -142,13 +147,8 @@ def extract_pose_model(output_file: Path, mode: int, include_model: bool = True)
 
 def find_obabel_executable() -> str | None:
     """Return the Open Babel CLI executable when available."""
-    obabel = shutil.which("obabel")
-    if obabel:
-        return obabel
-    candidate = Path(sys.executable).resolve().parent / (
-        "obabel.exe" if sys.platform.startswith("win") else "obabel"
-    )
-    return str(candidate) if candidate.exists() else None
+    obabel = find_obabel_path()
+    return str(obabel) if obabel is not None else None
 
 
 def convert_with_obabel(input_path: Path, output_path: Path) -> Path:
@@ -158,6 +158,7 @@ def convert_with_obabel(input_path: Path, output_path: Path) -> Path:
         raise RuntimeError("OpenBabel não encontrado.")
     completed = subprocess.run(
         [obabel, str(input_path), "-O", str(output_path)],
+        env=native_tool_env(Path(obabel)),
         capture_output=True,
         text=True,
         check=False,
@@ -782,6 +783,7 @@ class DockingWorker(QThread):
         completed = subprocess.run(
             command,
             cwd=self.output_directory,
+            env=native_tool_env(gnina_cli),
             capture_output=True,
             text=True,
             check=False,
@@ -1002,17 +1004,7 @@ class DockingWorker(QThread):
     @staticmethod
     def _gnina_cli_path() -> Path | None:
         """Return a GNINA executable from PATH or a local tools directory."""
-        path_value = shutil.which("gnina") or shutil.which("gnina.exe")
-        if path_value:
-            return Path(path_value)
-        candidates = [
-            Path(__file__).resolve().parents[1] / "tools" / "gnina" / "gnina.exe",
-            Path.cwd() / "tools" / "gnina" / "gnina.exe",
-        ]
-        for candidate in candidates:
-            if candidate.exists() and candidate.is_file():
-                return candidate
-        return None
+        return find_gnina_executable()
 
 
 def _safe_extract_archive(archive_path: Path, destination: Path) -> None:

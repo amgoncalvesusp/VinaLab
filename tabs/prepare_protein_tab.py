@@ -297,16 +297,11 @@ class PrepareProteinTab(QWidget):
         run H++/Reduce externally. This pipeline only adds polar/explicit
         hydrogens via Open Babel and overwrites the prepared PDB in-place.
         """
-        import shutil
         import subprocess
         import sys
+        from core.native_tools import find_obabel_executable, native_tool_env
 
-        obabel = shutil.which("obabel")
-        if obabel is None:
-            candidate = Path(sys.executable).resolve().parent / (
-                "obabel.exe" if sys.platform.startswith("win") else "obabel"
-            )
-            obabel = str(candidate) if candidate.exists() else None
+        obabel = find_obabel_executable()
         if obabel is None:
             QMessageBox.information(
                 self,
@@ -322,7 +317,8 @@ class PrepareProteinTab(QWidget):
         protonated_path = output_path.with_name(f"{output_path.stem}_H.pdb")
         try:
             completed = subprocess.run(
-                [obabel, str(output_path), "-O", str(protonated_path), "-h"],
+                [str(obabel), str(output_path), "-O", str(protonated_path), "-h"],
+                env=native_tool_env(obabel),
                 capture_output=True,
                 text=True,
                 check=False,

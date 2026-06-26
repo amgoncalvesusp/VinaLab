@@ -1,34 +1,25 @@
 # VinaLab v0.0.6
 
-## Melhorias de Interface e Usabilidade
+## Interface and Usability
 
-### Design Modernizado
-- Tema claro profissional com paleta de cores coerente (Canvas #eef1f6, Accent #2f6fed)
-- Tipografia e espaçamento recalibrados para hierarquia visual clara
-- Botões, campos e painéis com aparência consistente e polida
+- Modernized professional light theme with consistent color tokens, typography, and spacing.
+- Visible draggable horizontal and vertical scrollbars in side panels.
+- Mouse-wheel protection for spin boxes and combo boxes, so scrolling no longer changes docking parameters by accident.
+- Splitter handles redesigned so they are not confused with scrollbars.
 
-### Barras de Rolagem Draggáveis
-- Barras de rolagem horizontal e vertical visíveis e arrastáveis em todos os painéis laterais
-- Handle escuro (#5b6573) sobre fundo (#dde3ec) com alto contraste
-- Espessura de 17px para fácil interação com o mouse
-- Hover e pressed states com destaque em azul
+## Runtime and Conversion Fixes
 
-### Proteção Contra Alteração Acidental de Parâmetros
-- Rolar a roda do mouse sobre spinboxes e comboboxes agora move o painel em vez de alterar o valor
-- Valores ainda podem ser ajustados clicando e digitando ou usando os botões ↑↓
-- Elimina problema de parâmetros alterados sem intenção durante navegação
+- Bundles PySide6/Qt6 DLLs and the Microsoft Visual C++ runtime so the app opens on clean Windows machines.
+- Fixes the dependency-status crash caused by an incorrect package key in the docking tab.
+- Converts receptor PDBQT in-process in the frozen app using Meeko/Open Babel instead of requiring external command-line tools.
+- Bundles Open Babel support for receptor conversion and MOL2 conversion.
 
-### Outros
-- Handles do splitter redesenhados para não serem confundidos com barras de rolagem
-- Arquivos de diagnóstico temporários removidos do repositório
+## Packaging Fixes
 
-## Correções
-
-- Empacotamento corrigido para que o app abra em qualquer computador: DLLs do
-  PySide6/Qt6 e o runtime do Microsoft Visual C++ agora viajam no executável
-  (resolve o erro "DLL load failed" / DLL ausente em máquinas limpas)
-- Corrigido travamento na abertura (KeyError em verificação de dependências)
-- Conversão de receptor para PDBQT agora funciona no app empacotado: usa o Meeko
-  (mk_prepare_receptor) em processo, com Open Babel como alternativa, sem depender
-  de ferramentas de linha de comando externas. O Open Babel também passa a ser
-  empacotado para a conversão de receptores e arquivos MOL2
+- Adds a real Windows setup installer: `VinaLab-0.0.6-windows-x64-setup.exe`.
+- Keeps the portable Windows zip for users who do not want installation.
+- Aligns release metadata so `VERSION`, installer metadata, UI labels, and release notes all identify 0.0.6.
+- Bundles scoring archives from `pontuacao/` in the active Windows release spec.
+- Verifies Meeko, Open Babel, RDKit, ProDy/Bio, and runtime dependencies before release builds.
+- Bundles `obabel.exe` explicitly when available from `openbabel-wheel`.
+- Enables GNINA only when its executable can start with all required local DLLs.

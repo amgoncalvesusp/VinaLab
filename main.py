@@ -22,9 +22,13 @@ def main() -> int:
 
         manager = EnvironmentManager()
         if getattr(sys, "frozen", False):
-            manager.full_status_report()
-            missing = []
-            vina_status = {"ok": True}
+            report = manager.full_status_report()
+            missing = [
+                package
+                for package in report.get("packages", [])
+                if package.get("required", True) and not package.get("installed", False)
+            ]
+            vina_status = report.get("vina", {"ok": False})
         else:
             missing = manager.check_missing()
             vina_status = (
@@ -39,7 +43,10 @@ def main() -> int:
                     creationflags=NO_WINDOW,
                 )
                 return 0
-            missing_names = ", ".join(package["pip_name"] for package in missing)
+            missing_names = ", ".join(
+                package.get("pip_name") or package.get("name", "desconhecido")
+                for package in missing
+            )
             raise RuntimeError(
                 "O ambiente do VinaLab está incompleto e launcher.py não foi encontrado. "
                 f"Ausente: {missing_names or 'AutoDock Vina'}"

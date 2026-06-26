@@ -378,11 +378,15 @@ class BootstrapWindow:
             source = bundle_dir / file_name
             if source.exists():
                 shutil.copy2(source, runtime_dir / file_name)
-        for dir_name in ("core", "tabs", "ui", "config", "tools"):
+        for dir_name in ("core", "tabs", "ui", "config", "tools", "pontuacao"):
             source_dir = bundle_dir / dir_name
             target_dir = runtime_dir / dir_name
             if source_dir.exists():
                 shutil.copytree(source_dir, target_dir, dirs_exist_ok=True)
+        for file_name in ("VERSION", "README.md"):
+            source = bundle_dir / file_name
+            if source.exists():
+                shutil.copy2(source, runtime_dir / file_name)
 
     def _load_lang(self) -> str:
         """Load the bootstrap language from user preferences."""
