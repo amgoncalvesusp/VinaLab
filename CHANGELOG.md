@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.0.7 - 2026-06-30
+
+- Conversao de receptor para PDBQT corrigida: Meeko agora usa --default_altloc, resolvendo a falha em estruturas com residuos de altloc (ex.: 6LJ1).
+- Conversao deixa de reportar falso sucesso quando havia um .pdbqt antigo na saida; o erro real do Meeko passa a aparecer.
+- GNINA passa a ser empacotado em todas as builds (antes era descartado quando nao iniciava na maquina de build do CI).
+
 ## 0.0.6 - 2026-06-09
 
 - Design profissional modernizado: tema claro com tokens de cor consistentes, tipografia e espacamento calibrados.

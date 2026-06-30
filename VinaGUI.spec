@@ -59,25 +59,6 @@ def find_build_obabel():
     return None
 
 
-def bundled_gnina_is_launchable():
-    name = "gnina.exe" if sys.platform.startswith("win") else "gnina"
-    gnina = Path("tools") / "gnina" / name
-    if not gnina.exists():
-        return False
-    try:
-        result = subprocess.run(
-            [str(gnina), "--help"],
-            cwd=gnina.parent,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=10,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    return result.returncode == 0
-
-
 # meeko 0.7 imports prody at top level, prody imports Biopython, and Biopython's
 # substitution_matrices loads a data directory at import time. Without it,
 # ``import meeko`` raises FileNotFoundError for Bio/Align/substitution_matrices/data,
@@ -111,10 +92,15 @@ if sys.platform.startswith("win") and _obabel is None:
 if _obabel is not None:
     binaries.append((_obabel, "."))
 
-if bundled_gnina_is_launchable():
+# GNINA is always bundled when present in the repo. It was previously gated on
+# gnina.exe launching on the CI build machine, but the runner cannot start it
+# (no GPU/driver there), so the gate silently dropped GNINA from every release.
+# Ship it unconditionally and let runtime detection (native_tools.find_gnina_executable)
+# decide whether it can actually run on the user's machine.
+if (Path("tools") / "gnina").is_dir():
     datas.append(("tools/gnina", "tools/gnina"))
 else:
-    print("Skipping bundled GNINA: tools/gnina/gnina.exe is not launchable.")
+    print("tools/gnina not present; GNINA will be unavailable in this build.")
 
 # openbabel-wheel keeps its private shared libraries in a sibling
 # "openbabel_wheel.libs" directory (the delvewheel layout) that collect_all does

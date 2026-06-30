@@ -5,7 +5,7 @@ $AppName = "VinaLab"
 $InstallRoot = Join-Path $env:LOCALAPPDATA $AppName
 $SourceDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $VersionFile = Join-Path $SourceDir "VERSION"
-$Version = "0.0.6"
+$Version = "0.0.7"
 if (Test-Path $VersionFile) {
     $Version = (Get-Content -Raw -Path $VersionFile).Trim()
 }
