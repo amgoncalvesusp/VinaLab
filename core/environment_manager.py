@@ -13,6 +13,8 @@ import shutil
 import subprocess
 import sys
 
+from core.native_tools import find_vina_executable
+
 ProgressCallback = Callable[[str, int, str], None]
 
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0
@@ -899,26 +901,8 @@ class EnvironmentManager:
         return None
 
     def _vina_cli_path(self) -> Path | None:
-        """Return a bundled AutoDock Vina executable fallback, if available."""
-        bundle_dir = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
-        exe_dir = (
-            Path(sys.executable).resolve().parent
-            if getattr(sys, "frozen", False)
-            else Path.cwd()
-        )
-        candidates = [
-            self.app_dir / "tools" / "vina" / "vina_1.2.7_win.exe",
-            bundle_dir / "tools" / "vina" / "vina_1.2.7_win.exe",
-            exe_dir / "tools" / "vina" / "vina_1.2.7_win.exe",
-            Path(__file__).resolve().parents[1]
-            / "tools"
-            / "vina"
-            / "vina_1.2.7_win.exe",
-        ]
-        for candidate in candidates:
-            if candidate.exists() and candidate.is_file():
-                return candidate
-        return None
+        """Return a bundled or PATH AutoDock Vina CLI fallback, if available."""
+        return find_vina_executable()
 
     def _is_frozen_bundle(self) -> bool:
         """Return True when running from a PyInstaller executable."""

@@ -1,10 +1,15 @@
 # Changelog
 
-## 0.0.7 - 2026-06-30
+## 0.0.8 - 2026-07-04
 
-- Conversao de receptor para PDBQT corrigida: Meeko agora usa --default_altloc, resolvendo a falha em estruturas com residuos de altloc (ex.: 6LJ1).
-- Conversao deixa de reportar falso sucesso quando havia um .pdbqt antigo na saida; o erro real do Meeko passa a aparecer.
-- GNINA passa a ser empacotado em todas as builds (antes era descartado quando nao iniciava na maquina de build do CI).
+- Corrige o fechamento imediato do aplicativo no Linux: desativa o sandbox do QtWebEngine no pacote congelado (`QTWEBENGINE_DISABLE_SANDBOX`), que impedia a `QWebEngineView` de iniciar a partir do diretorio temporario do PyInstaller.
+
+## 0.0.7 - 2026-07-04
+
+- Corrige a preparacao de receptores PDBQT com localizacao alternativa usando `--default_altloc`.
+- Evita falso sucesso quando um `.pdbqt` antigo ja existia na pasta de saida.
+- Adiciona o instalador Ubuntu e o pacote Linux portatil ao release 0.0.7.
+- Inclui o executavel Linux oficial do GNINA no pacote Ubuntu/Linux para habilitar pontuacao GNINA/CNN.
 
 ## 0.0.6 - 2026-06-09
 

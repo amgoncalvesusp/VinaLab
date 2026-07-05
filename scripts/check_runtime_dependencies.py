@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from core.native_tools import find_obabel_executable
+from core.native_tools import find_obabel_executable, find_vina_executable
 
 
 REQUIRED_IMPORTS = [
@@ -46,12 +46,15 @@ def main() -> int:
     obabel = find_obabel_executable()
     if obabel is None:
         failures.append("obabel.exe/obabel was not found")
+    vina = find_vina_executable()
+    if vina is None:
+        failures.append("vina_1.2.7_win.exe/vina was not found")
 
     if failures:
         for failure in failures:
             print(f"ERROR: {failure}", file=sys.stderr)
         return 1
-    print(f"Runtime dependency check passed. Open Babel CLI: {obabel}")
+    print(f"Runtime dependency check passed. Open Babel CLI: {obabel}; AutoDock Vina CLI: {vina}")
     return 0
 
 

@@ -38,6 +38,16 @@ def find_gnina_executable() -> Path | None:
     return None
 
 
+def find_vina_executable() -> Path | None:
+    """Return an AutoDock Vina CLI bundled with the app or available on PATH."""
+    names = (
+        ("vina_1.2.7_win.exe", "vina.exe", "vina")
+        if sys.platform.startswith("win")
+        else ("vina",)
+    )
+    return find_native_executable(names, "vina")
+
+
 def native_tool_starts(
     tool_path: Path, args: Sequence[str] = ("--help",), timeout: int = 10
 ) -> bool:

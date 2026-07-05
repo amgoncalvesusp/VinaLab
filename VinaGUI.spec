@@ -59,6 +59,29 @@ def find_build_obabel():
     return None
 
 
+def find_build_vina():
+    names = (
+        ("vina_1.2.7_win.exe", "vina.exe", "vina")
+        if sys.platform.startswith("win")
+        else ("vina",)
+    )
+    for name in names:
+        candidate = Path("tools") / "vina" / name
+        if candidate.exists():
+            return str(candidate)
+    for name in names:
+        path_value = shutil.which(name)
+        if path_value:
+            return path_value
+    return None
+
+
+def bundled_windows_gnina_exists():
+    name = "gnina.exe"
+    gnina = Path("tools") / "gnina" / name
+    return gnina.exists() and gnina.is_file()
+
+
 # meeko 0.7 imports prody at top level, prody imports Biopython, and Biopython's
 # substitution_matrices loads a data directory at import time. Without it,
 # ``import meeko`` raises FileNotFoundError for Bio/Align/substitution_matrices/data,
@@ -92,15 +115,20 @@ if sys.platform.startswith("win") and _obabel is None:
 if _obabel is not None:
     binaries.append((_obabel, "."))
 
-# GNINA is always bundled when present in the repo. It was previously gated on
-# gnina.exe launching on the CI build machine, but the runner cannot start it
-# (no GPU/driver there), so the gate silently dropped GNINA from every release.
-# Ship it unconditionally and let runtime detection (native_tools.find_gnina_executable)
-# decide whether it can actually run on the user's machine.
-if (Path("tools") / "gnina").is_dir():
+_vina_cli = find_build_vina()
+if sys.platform.startswith("linux") and _vina_cli is None:
+    raise SystemExit(
+        "vina was not found; install the Vina Python package or AutoDock Vina CLI before building."
+    )
+if _vina_cli is not None and not Path(_vina_cli).resolve().is_relative_to(
+    (Path("tools") / "vina").resolve()
+):
+    binaries.append((_vina_cli, "tools/vina"))
+
+if sys.platform.startswith("win") and bundled_windows_gnina_exists():
     datas.append(("tools/gnina", "tools/gnina"))
 else:
-    print("tools/gnina not present; GNINA will be unavailable in this build.")
+    print("Skipping PyInstaller GNINA bundle for this platform/build.")
 
 # openbabel-wheel keeps its private shared libraries in a sibling
 # "openbabel_wheel.libs" directory (the delvewheel layout) that collect_all does
@@ -219,5 +247,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=["ui\\icon.ico"],
+    icon=["ui/icon.ico"],
 )

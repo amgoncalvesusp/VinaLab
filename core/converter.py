@@ -376,13 +376,9 @@ class FileConverter:
         ``meeko.cli.mk_prepare_receptor`` — already collected into the bundle — so
         we run its ``main()`` in-process. Meeko 0.7 arguments: ``--read_pdb`` reads
         a PDB without ProDy, ``-p`` writes the PDBQT (``-o`` is only a basename),
-        ``--allow_bad_res`` drops residues with missing atoms instead of aborting,
-        and ``--default_altloc A`` picks a variant for residues with alternate
-        locations. Without ``--default_altloc`` Meeko aborts with "Creation of data
-        structure for receptor failed" on any crystal structure that has altloc
-        residues (extremely common), which is why receptor conversion appeared to
-        fail "as if Meeko was not working". Returns ``None`` when Meeko cannot be
-        imported so the caller falls back to Open Babel.
+        and ``--allow_bad_res`` drops residues with missing atoms instead of
+        aborting. Returns ``None`` when Meeko cannot be imported so the caller
+        falls back to Open Babel.
         """
         try:
             from meeko.cli import mk_prepare_receptor as receptor_cli
@@ -391,14 +387,6 @@ class FileConverter:
 
         import contextlib
         import io
-
-        # Remove any pre-existing output first: success is decided by whether Meeko
-        # actually writes the file, so a stale file from a previous attempt must not
-        # be mistaken for a fresh, successful conversion.
-        try:
-            output_path.unlink(missing_ok=True)
-        except OSError:
-            pass
 
         argv = [
             "mk_prepare_receptor",
@@ -409,8 +397,6 @@ class FileConverter:
             "-p",
             str(output_path),
             "--allow_bad_res",
-            "--default_altloc",
-            "A",
         ]
         captured = io.StringIO()
         saved_argv = sys.argv
@@ -442,15 +428,15 @@ class FileConverter:
             return ConversionResult(
                 True,
                 output_path,
-                "Receptor preparado com Meeko (mk_prepare_receptor, em processo).",
+                captured.getvalue()
+                or "Receptor preparado com Meeko (mk_prepare_receptor, em processo).",
                 "",
             )
         return ConversionResult(
             False,
             output_path,
             captured.getvalue(),
-            "Meeko não gerou o PDBQT do receptor "
-            f"(código {exit_code}). {captured.getvalue().strip()[-400:]}",
+            f"Meeko não gerou o PDBQT do receptor (código {exit_code}).",
         )
 
     @staticmethod

@@ -28,6 +28,7 @@ from core.file_utils import (
 from core.native_tools import (
     find_obabel_executable as find_obabel_path,
     find_gnina_executable,
+    find_vina_executable,
     native_tool_env,
 )
 
@@ -988,18 +989,8 @@ class DockingWorker(QThread):
 
     @staticmethod
     def _vina_cli_path() -> Path | None:
-        """Return the bundled AutoDock Vina executable fallback."""
-        candidates = [
-            Path(__file__).resolve().parents[1]
-            / "tools"
-            / "vina"
-            / "vina_1.2.7_win.exe",
-            Path.cwd() / "tools" / "vina" / "vina_1.2.7_win.exe",
-        ]
-        for candidate in candidates:
-            if candidate.exists() and candidate.is_file():
-                return candidate
-        return None
+        """Return a bundled or PATH AutoDock Vina CLI fallback."""
+        return find_vina_executable()
 
     @staticmethod
     def _gnina_cli_path() -> Path | None:

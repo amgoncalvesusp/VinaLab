@@ -7,11 +7,24 @@ import argparse
 import hashlib
 from pathlib import Path
 import platform
+import shutil
+import subprocess
 import tarfile
+import tempfile
 import zipfile
 
 
 APP_NAME = "VinaLab"
+DEB_PACKAGE_NAME = "vinalab"
+LINUX_ARCH = "amd64"
+LINUX_GNINA_PATH = Path("tools/gnina/gnina")
+LINUX_DEB_DEPENDS = (
+    "autodock-vina, libc6, libstdc++6, libgcc-s1, zlib1g, libgl1, libegl1, "
+    "libxkbcommon-x11-0, libxcb-cursor0, libxcb-icccm4, libxcb-image0, "
+    "libxcb-keysyms1, libxcb-randr0, libxcb-render-util0, libxcb-shape0, "
+    "libxcb-xinerama0, libxcb-xfixes0, libnss3, libxcomposite1, "
+    "libxdamage1, libxrandr2, libgbm1, libasound2 | libasound2t64, xdg-utils"
+)
 
 
 def main() -> int:
@@ -31,7 +44,7 @@ def main() -> int:
     elif system == "darwin":
         artifacts = [package_unix(args.version, dist_dir, output_dir, "macos")]
     elif system == "linux":
-        artifacts = [package_unix(args.version, dist_dir, output_dir, "linux")]
+        artifacts = package_linux(args.version, dist_dir, output_dir)
     else:
         raise SystemExit(f"Sistema operacional não suportado para empacotamento: {platform.system()}")
 
@@ -91,15 +104,144 @@ def package_unix(version: str, dist_dir: Path, output_dir: Path, target: str) ->
     ]
     if target == "linux":
         entries.append((Path("packaging/linux/vinalab.desktop"), "vinalab.desktop"))
+        gnina = optional_linux_gnina_path()
+        if gnina is not None:
+            entries.append((gnina, "tools/gnina/gnina"))
     with tarfile.open(archive, "w:gz") as handle:
         for source, arcname in entries:
             require_file(source)
             info = handle.gettarinfo(str(source), arcname=arcname)
-            if source == executable:
+            if source == executable or arcname == "tools/gnina/gnina":
                 info.mode = 0o755
             with source.open("rb") as file_handle:
                 handle.addfile(info, file_handle)
     return archive
+
+
+def package_linux(version: str, dist_dir: Path, output_dir: Path) -> list[Path]:
+    """Return Linux portable and Ubuntu installer artifacts."""
+    executable = dist_dir / APP_NAME
+    require_file(executable)
+    return [
+        package_unix(version, dist_dir, output_dir, "linux"),
+        package_linux_deb(version, executable, output_dir),
+    ]
+
+
+def package_linux_deb(version: str, executable: Path, output_dir: Path) -> Path:
+    """Build an Ubuntu-compatible Debian package using dpkg-deb."""
+    dpkg_deb = shutil.which("dpkg-deb")
+    if dpkg_deb is None:
+        raise FileNotFoundError(
+            "dpkg-deb not found; build the Linux installer on Ubuntu/Debian."
+        )
+    deb_path = output_dir / f"{APP_NAME}-{version}-ubuntu-x64.deb"
+    if deb_path.exists():
+        deb_path.unlink()
+    with tempfile.TemporaryDirectory(prefix="vinalab-deb-") as tmpdir:
+        package_root = Path(tmpdir) / DEB_PACKAGE_NAME
+        prepare_linux_deb_tree(version, executable, package_root)
+        subprocess.run(
+            [
+                dpkg_deb,
+                "--build",
+                "--root-owner-group",
+                str(package_root),
+                str(deb_path),
+            ],
+            check=True,
+        )
+    return deb_path
+
+
+def prepare_linux_deb_tree(
+    version: str,
+    executable: Path,
+    package_root: Path,
+    include_gnina: bool = True,
+    gnina_path: Path | None = None,
+) -> None:
+    """Create the Debian package filesystem tree without invoking dpkg-deb."""
+    require_file(executable)
+    app_dir = package_root / "opt" / DEB_PACKAGE_NAME
+    bin_dir = package_root / "usr" / "bin"
+    apps_dir = package_root / "usr" / "share" / "applications"
+    icon_dir = package_root / "usr" / "share" / "icons" / "hicolor" / "256x256" / "apps"
+    doc_dir = package_root / "usr" / "share" / "doc" / DEB_PACKAGE_NAME
+    control_dir = package_root / "DEBIAN"
+
+    for directory in (app_dir, bin_dir, apps_dir, icon_dir, doc_dir, control_dir):
+        directory.mkdir(parents=True, exist_ok=True)
+
+    shutil.copy2(executable, app_dir / APP_NAME)
+    (app_dir / APP_NAME).chmod(0o755)
+    shutil.copy2(Path("README.md"), doc_dir / "README.md")
+    shutil.copy2(release_notes_path(version), doc_dir / f"RELEASE_NOTES_{version}.md")
+    shutil.copy2(Path("LICENSE"), doc_dir / "copyright")
+    shutil.copy2(Path("packaging/linux/vinalab.desktop"), apps_dir / "vinalab.desktop")
+    shutil.copy2(Path("ui/icon.png"), icon_dir / "vinalab.png")
+    if include_gnina:
+        install_linux_gnina(app_dir, gnina_path)
+
+    launcher = bin_dir / "vinalab"
+    launcher.write_text(
+        "#!/usr/bin/env sh\nexec /opt/vinalab/VinaLab \"$@\"\n",
+        encoding="ascii",
+    )
+    launcher.chmod(0o755)
+
+    (control_dir / "control").write_text(
+        linux_deb_control(version, package_root),
+        encoding="utf-8",
+    )
+
+
+def linux_deb_control(version: str, package_root: Path) -> str:
+    """Return Debian control metadata for the Ubuntu installer."""
+    depends_parts = LINUX_DEB_DEPENDS.split(", ")
+    depends = depends_parts[0] + "".join(f",\n {part}" for part in depends_parts[1:])
+    installed_size = max(1, package_installed_size_kb(package_root))
+    return (
+        f"Package: {DEB_PACKAGE_NAME}\n"
+        f"Version: {version}\n"
+        "Section: science\n"
+        "Priority: optional\n"
+        f"Architecture: {LINUX_ARCH}\n"
+        "Maintainer: Adriano Marques Goncalves <adriano@example.invalid>\n"
+        f"Installed-Size: {installed_size}\n"
+        f"Depends: {depends}\n"
+        "Description: Desktop interface for AutoDock Vina and GNINA molecular docking\n"
+        " VinaLab helps prepare PDBQT inputs, run Vina or GNINA CNN docking jobs,\n"
+        " inspect results, visualize poses, and generate reports.\n"
+    )
+
+
+def optional_linux_gnina_path() -> Path | None:
+    """Return the optional bundled Linux GNINA CLI when available."""
+    if LINUX_GNINA_PATH.exists() and LINUX_GNINA_PATH.is_file():
+        return LINUX_GNINA_PATH
+    return None
+
+
+def install_linux_gnina(app_dir: Path, gnina_path: Path | None = None) -> None:
+    """Install the optional GNINA scoring executable beside the Linux app."""
+    source = gnina_path or optional_linux_gnina_path()
+    if source is None:
+        return
+    require_file(source)
+    destination = app_dir / "tools" / "gnina" / "gnina"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, destination)
+    destination.chmod(0o755)
+
+
+def package_installed_size_kb(package_root: Path) -> int:
+    """Return the installed size expected by Debian control files."""
+    total = 0
+    for path in package_root.rglob("*"):
+        if path.is_file():
+            total += path.stat().st_size
+    return (total + 1023) // 1024
 
 
 def write_zip(destination: Path, entries: list[tuple[Path, str]]) -> None:

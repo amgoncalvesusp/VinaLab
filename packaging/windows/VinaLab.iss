@@ -1,6 +1,6 @@
 #define MyAppName "VinaLab"
 #ifndef MyAppVersion
-#define MyAppVersion "0.0.7"
+#define MyAppVersion "0.0.8"
 #endif
 #define MyAppExeName "VinaLab.exe"
 

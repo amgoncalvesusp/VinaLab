@@ -2,9 +2,16 @@
 """Application entry point for VinaLab."""
 
 from pathlib import Path
+import os
 import subprocess
 import traceback
 import sys
+
+# QtWebEngine's Chromium sandbox cannot run from PyInstaller's extracted _MEI
+# directory (chrome-sandbox is not SUID root there), so the first QWebEngineView
+# crashes the frozen Linux app immediately. Disable the sandbox before Qt loads.
+if sys.platform.startswith("linux") and getattr(sys, "frozen", False):
+    os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
 
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0
 

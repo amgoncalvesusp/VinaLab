@@ -18,8 +18,11 @@
 
 - Adds a real Windows setup installer: `VinaLab-0.0.6-windows-x64-setup.exe`.
 - Keeps the portable Windows zip for users who do not want installation.
+- Adds an Ubuntu x64 installer: `VinaLab-0.0.6-ubuntu-x64.deb`.
+- Keeps a Linux portable tarball: `VinaLab-0.0.6-linux-x64.tar.gz`.
 - Aligns release metadata so `VERSION`, installer metadata, UI labels, and release notes all identify 0.0.6.
 - Bundles scoring archives from `pontuacao/` in the active Windows release spec.
 - Verifies Meeko, Open Babel, RDKit, ProDy/Bio, and runtime dependencies before release builds.
 - Bundles `obabel.exe` explicitly when available from `openbabel-wheel`.
+- Bundles the native `vina` CLI on Ubuntu release builds so docking works without the Python Vina wheel.
 - Enables GNINA only when its executable can start with all required local DLLs.

@@ -6,10 +6,12 @@ VinaLab is a desktop interface for AutoDock Vina 1.2.x. It helps prepare PDBQT i
 
 ### Downloads
 
-Stable releases are published from Git tags such as `v0.0.6`. The current release workflow builds Windows x64 packages:
+Stable releases are published from Git tags such as `v0.0.7`. The current release workflow builds Windows and Ubuntu x64 packages:
 
 - Windows setup installer: `VinaLab-<version>-windows-x64-setup.exe`
 - Windows portable archive: `VinaLab-<version>-windows-x64-portable.zip`
+- Ubuntu installer: `VinaLab-<version>-ubuntu-x64.deb`
+- Linux portable archive: `VinaLab-<version>-linux-x64.tar.gz`
 
 ### Windows
 
@@ -27,7 +29,23 @@ The portable package can also be extracted and run directly:
 VinaLab.exe
 ```
 
-macOS and Linux are supported from source only in this release.
+### Ubuntu Linux
+
+Download and install the Ubuntu package with apt so system dependencies are resolved:
+
+```bash
+sudo apt install ./VinaLab-<version>-ubuntu-x64.deb
+```
+
+Launch it from the application menu or run:
+
+```bash
+vinalab
+```
+
+The Ubuntu package installs the app under `/opt/vinalab`, registers a desktop entry, installs the application icon, includes an AutoDock Vina CLI fallback in the frozen app, and ships the GNINA Linux executable for CNN scoring.
+
+macOS is supported from source only in this release.
 
 ### Running From Source
 
@@ -66,10 +84,12 @@ VinaLab e uma interface desktop para AutoDock Vina 1.2.x. Ele ajuda a preparar e
 
 ### Downloads
 
-Releases estaveis sao publicados a partir de tags Git como `v0.0.6`. O workflow de release atual gera pacotes Windows x64:
+Releases estaveis sao publicados a partir de tags Git como `v0.0.7`. O workflow de release atual gera pacotes Windows e Ubuntu x64:
 
 - Instalador Windows: `VinaLab-<versao>-windows-x64-setup.exe`
 - Pacote portatil Windows: `VinaLab-<versao>-windows-x64-portable.zip`
+- Instalador Ubuntu: `VinaLab-<versao>-ubuntu-x64.deb`
+- Pacote portatil Linux: `VinaLab-<versao>-linux-x64.tar.gz`
 
 ### Windows
 
@@ -87,7 +107,23 @@ O pacote portatil tambem pode ser extraido e executado diretamente:
 VinaLab.exe
 ```
 
-macOS e Linux sao suportados pelo codigo-fonte nesta release.
+### Ubuntu Linux
+
+Baixe e instale o pacote Ubuntu com apt para resolver as dependencias de sistema:
+
+```bash
+sudo apt install ./VinaLab-<versao>-ubuntu-x64.deb
+```
+
+Abra pelo menu de aplicativos ou execute:
+
+```bash
+vinalab
+```
+
+O pacote Ubuntu instala o app em `/opt/vinalab`, registra a entrada desktop, instala o icone da aplicacao, inclui um fallback CLI do AutoDock Vina no app congelado e distribui o executavel Linux do GNINA para pontuacao CNN.
+
+macOS e suportado pelo codigo-fonte nesta release.
 
 ### Execucao Pelo Codigo-Fonte
 

@@ -2,6 +2,8 @@
 Type=Application
 Name=VinaLab
 Comment=Interface desktop para AutoDock Vina
-Exec=sh -c "cd %k/../.. && ./packaging/linux/run_vinalab.sh"
+Exec=vinalab
+TryExec=vinalab
+Icon=vinalab
 Terminal=false
 Categories=Science;Chemistry;

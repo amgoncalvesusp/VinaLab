@@ -30,7 +30,12 @@ from core.docking_engine import (
     discover_external_scoring_functions,
     extract_pose_model,
 )
-from core.native_tools import find_native_executable, native_tool_env, native_tool_starts
+from core.native_tools import (
+    find_native_executable,
+    find_vina_executable,
+    native_tool_env,
+    native_tool_starts,
+)
 from core.file_utils import pdbqt_receptor_atoms, validate_ligand_pdbqt
 
 
@@ -68,6 +73,20 @@ class DockingHelperTests(unittest.TestCase):
             tool_path.write_text("", encoding="utf-8")
             with mock.patch("sys.executable", str(scripts_dir / "python.exe")):
                 found = find_native_executable(("obabel.exe",), "openbabel")
+        self.assertEqual(found, tool_path.resolve())
+
+    def test_find_vina_executable_supports_linux_cli_name(self) -> None:
+        """Ubuntu builds should discover a native vina CLI without a Windows suffix."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            scripts_dir = Path(tmpdir) / "bin"
+            scripts_dir.mkdir()
+            tool_path = scripts_dir / "vina"
+            tool_path.write_text("", encoding="utf-8")
+            with (
+                mock.patch("sys.executable", str(scripts_dir / "python")),
+                mock.patch("sys.platform", "linux"),
+            ):
+                found = find_vina_executable()
         self.assertEqual(found, tool_path.resolve())
 
     def test_native_tool_starts_rejects_non_executable_payload(self) -> None:
