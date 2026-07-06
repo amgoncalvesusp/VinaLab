@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.0 - 2026-07-06
+
+- Evita janelas de erro do Windows ao detectar DLLs nativas ausentes do `gnina.exe` antes de iniciar o processo.
+- Prepara o empacotamento para incluir DLLs libtorch do GNINA Windows somente quando um runtime CUDA completo estiver disponível.
+- Reforça a conversão para PDBQT com remoção de saídas antigas, seleção do maior fragmento covalente do ligante e fallback pelo CLI do Open Babel.
+- Fortalece os launchers Linux instalado e portátil com caminhos nativos, flags QtWebEngine e diretório de trabalho explícitos.
+
 ## 0.0.9 - 2026-07-05
 
 - Corrige de fato o fechamento imediato no Linux: QtWebEngine agora roda em processo unico com GPU/sandbox desativados (`--single-process --no-sandbox --disable-gpu`) e `AA_ShareOpenGLContexts` e definido antes da `QApplication`.

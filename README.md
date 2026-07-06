@@ -6,7 +6,7 @@ VinaLab is a desktop interface for AutoDock Vina 1.2.x. It helps prepare PDBQT i
 
 ### Downloads
 
-Stable releases are published from Git tags such as `v0.0.7`. The current release workflow builds Windows and Ubuntu x64 packages:
+Stable releases are published from Git tags such as `v1.0.0`. The current release workflow builds Windows and Ubuntu x64 packages:
 
 - Windows setup installer: `VinaLab-<version>-windows-x64-setup.exe`
 - Windows portable archive: `VinaLab-<version>-windows-x64-portable.zip`
@@ -84,7 +84,7 @@ VinaLab e uma interface desktop para AutoDock Vina 1.2.x. Ele ajuda a preparar e
 
 ### Downloads
 
-Releases estaveis sao publicados a partir de tags Git como `v0.0.7`. O workflow de release atual gera pacotes Windows e Ubuntu x64:
+Releases estáveis são publicados a partir de tags Git como `v1.0.0`. O workflow de release atual gera pacotes Windows e Ubuntu x64:
 
 - Instalador Windows: `VinaLab-<versao>-windows-x64-setup.exe`
 - Pacote portatil Windows: `VinaLab-<versao>-windows-x64-portable.zip`

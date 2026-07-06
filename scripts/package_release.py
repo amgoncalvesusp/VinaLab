@@ -104,6 +104,7 @@ def package_unix(version: str, dist_dir: Path, output_dir: Path, target: str) ->
     ]
     if target == "linux":
         entries.append((Path("packaging/linux/vinalab.desktop"), "vinalab.desktop"))
+        entries.append((Path("packaging/linux/run_vinalab.sh"), "run_vinalab.sh"))
         gnina = optional_linux_gnina_path()
         if gnina is not None:
             entries.append((gnina, "tools/gnina/gnina"))
@@ -111,7 +112,10 @@ def package_unix(version: str, dist_dir: Path, output_dir: Path, target: str) ->
         for source, arcname in entries:
             require_file(source)
             info = handle.gettarinfo(str(source), arcname=arcname)
-            if source == executable or arcname == "tools/gnina/gnina":
+            if source == executable or arcname in {
+                "tools/gnina/gnina",
+                "run_vinalab.sh",
+            }:
                 info.mode = 0o755
             with source.open("rb") as file_handle:
                 handle.addfile(info, file_handle)
@@ -185,7 +189,7 @@ def prepare_linux_deb_tree(
 
     launcher = bin_dir / "vinalab"
     launcher.write_text(
-        "#!/usr/bin/env sh\nexec /opt/vinalab/VinaLab \"$@\"\n",
+        linux_installed_launcher_script("/opt/vinalab"),
         encoding="ascii",
     )
     launcher.chmod(0o755)
@@ -214,6 +218,21 @@ def linux_deb_control(version: str, package_root: Path) -> str:
         " VinaLab helps prepare PDBQT inputs, run Vina or GNINA CNN docking jobs,\n"
         " inspect results, visualize poses, and generate reports.\n"
     )
+
+
+def linux_installed_launcher_script(app_root: str) -> str:
+    """Return the installed Linux launcher with native runtime paths."""
+    return f"""#!/usr/bin/env sh
+APP_ROOT="{app_root}"
+export QTWEBENGINE_DISABLE_SANDBOX="${{QTWEBENGINE_DISABLE_SANDBOX:-1}}"
+if [ -z "${{QTWEBENGINE_CHROMIUM_FLAGS:-}}" ]; then
+  export QTWEBENGINE_CHROMIUM_FLAGS="--single-process --no-sandbox --disable-gpu"
+fi
+export PATH="$APP_ROOT/tools/gnina:$APP_ROOT/tools/vina:$APP_ROOT/openbabel/bin:$APP_ROOT/openbabel:${{PATH:-}}"
+export LD_LIBRARY_PATH="$APP_ROOT:$APP_ROOT/tools/gnina:$APP_ROOT/tools/vina:$APP_ROOT/openbabel/lib:$APP_ROOT/openbabel/bin:$APP_ROOT/openbabel:${{LD_LIBRARY_PATH:-}}"
+cd "$APP_ROOT"
+exec "$APP_ROOT/VinaLab" "$@"
+"""
 
 
 def optional_linux_gnina_path() -> Path | None:

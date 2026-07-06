@@ -82,6 +82,41 @@ def bundled_windows_gnina_exists():
     return gnina.exists() and gnina.is_file()
 
 
+def collect_windows_gnina_torch_dlls():
+    """Bundle libtorch DLLs for GNINA when a compatible CUDA torch is available."""
+    if not sys.platform.startswith("win") or not bundled_windows_gnina_exists():
+        return []
+    required = ("c10.dll", "torch_cpu.dll", "torch_cuda.dll")
+    search_roots = []
+    libtorch_bin = os.environ.get("LIBTORCH_BIN")
+    if libtorch_bin:
+        search_roots.append(Path(libtorch_bin))
+    try:
+        import torch
+
+        search_roots.append(Path(torch.__file__).resolve().parent / "lib")
+    except Exception:
+        pass
+    found = []
+    missing = []
+    for dll_name in required:
+        dll_path = next(
+            (root / dll_name for root in search_roots if (root / dll_name).is_file()),
+            None,
+        )
+        if dll_path is None:
+            missing.append(dll_name)
+        else:
+            found.append((str(dll_path), "tools/gnina"))
+    if missing:
+        print(
+            "GNINA Windows libtorch DLLs not fully bundled; missing: "
+            + ", ".join(missing)
+        )
+        return []
+    return found
+
+
 # meeko 0.7 imports prody at top level, prody imports Biopython, and Biopython's
 # substitution_matrices loads a data directory at import time. Without it,
 # ``import meeko`` raises FileNotFoundError for Bio/Align/substitution_matrices/data,
@@ -127,6 +162,7 @@ if _vina_cli is not None and not Path(_vina_cli).resolve().is_relative_to(
 
 if sys.platform.startswith("win") and bundled_windows_gnina_exists():
     datas.append(("tools/gnina", "tools/gnina"))
+    binaries += collect_windows_gnina_torch_dlls()
 else:
     print("Skipping PyInstaller GNINA bundle for this platform/build.")
 

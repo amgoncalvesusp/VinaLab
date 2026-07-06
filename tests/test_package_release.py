@@ -43,7 +43,12 @@ class PackageReleaseTests(unittest.TestCase):
             self.assertTrue(desktop_entry.exists())
             self.assertTrue(icon.exists())
             self.assertEqual(installed_app.read_bytes(), b"fake executable")
-            self.assertIn("/opt/vinalab/VinaLab", launcher.read_text(encoding="ascii"))
+            launcher_text = launcher.read_text(encoding="ascii")
+            self.assertIn('APP_ROOT="/opt/vinalab"', launcher_text)
+            self.assertIn('exec "$APP_ROOT/VinaLab"', launcher_text)
+            self.assertIn("QTWEBENGINE_DISABLE_SANDBOX", launcher_text)
+            self.assertIn("LD_LIBRARY_PATH", launcher_text)
+            self.assertIn("tools/gnina", launcher_text)
 
             control_text = control.read_text(encoding="utf-8")
             self.assertTrue(control_text.startswith("Package: vinalab\n"))

@@ -2,6 +2,7 @@
 """Unit tests for docking helper utilities."""
 
 from pathlib import Path
+import os
 import sys
 import tempfile
 import types
@@ -34,6 +35,7 @@ from core.native_tools import (
     find_native_executable,
     find_vina_executable,
     native_tool_env,
+    native_tool_missing_dlls,
     native_tool_starts,
 )
 from core.file_utils import pdbqt_receptor_atoms, validate_ligand_pdbqt
@@ -63,6 +65,33 @@ class DockingHelperTests(unittest.TestCase):
         resolved_tool_dir = str(tool_dir.resolve())
         self.assertTrue(env["PATH"].startswith(resolved_tool_dir))
         self.assertEqual(env["BABEL_LIBDIR"], resolved_tool_dir)
+
+    def test_native_tool_env_adds_openbabel_and_torch_runtime_paths(self) -> None:
+        """Frozen tools should see Open Babel plugins/data and libtorch DLLs."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            bundle_dir = root / "_MEI"
+            openbabel_bin = bundle_dir / "openbabel" / "bin"
+            openbabel_data = openbabel_bin / "data"
+            torch_lib = bundle_dir / "torch" / "lib"
+            for path in (openbabel_bin, openbabel_data, torch_lib):
+                path.mkdir(parents=True)
+            (openbabel_bin / "formats_common.obf").write_text("", encoding="utf-8")
+            (torch_lib / "c10.dll").write_text("", encoding="utf-8")
+            tool_path = root / "gnina.exe"
+            tool_path.write_text("", encoding="utf-8")
+
+            with mock.patch.object(sys, "_MEIPASS", str(bundle_dir), create=True):
+                env = native_tool_env(
+                    tool_path,
+                    {"PATH": "C:\\Windows\\System32", "LD_LIBRARY_PATH": "/usr/lib"},
+                )
+
+        path_entries = env["PATH"].split(os.pathsep)
+        self.assertIn(str(openbabel_bin.resolve()), path_entries)
+        self.assertIn(str(torch_lib.resolve()), path_entries)
+        self.assertEqual(env["BABEL_LIBDIR"], str(openbabel_bin.resolve()))
+        self.assertEqual(env["BABEL_DATADIR"], str(openbabel_data.resolve()))
 
     def test_find_native_executable_prefers_python_scripts_before_path(self) -> None:
         """Bundled CLI discovery should not accidentally prefer unrelated PATH tools."""
@@ -95,6 +124,30 @@ class DockingHelperTests(unittest.TestCase):
             tool_path = Path(tmpdir) / "gnina.exe"
             tool_path.write_text("", encoding="utf-8")
             self.assertFalse(native_tool_starts(tool_path, timeout=1))
+
+    def test_native_tool_starts_skips_launch_when_dlls_are_missing(self) -> None:
+        """Missing DLL preflight should prevent Windows system error dialogs."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tool_path = Path(tmpdir) / "gnina.exe"
+            tool_path.write_text("", encoding="utf-8")
+            with (
+                mock.patch(
+                    "core.native_tools.native_tool_missing_dlls",
+                    return_value=("torch_cuda.dll",),
+                ),
+                mock.patch("core.native_tools.subprocess.run") as run_mock,
+            ):
+                self.assertFalse(native_tool_starts(tool_path, timeout=1))
+            run_mock.assert_not_called()
+
+    @unittest.skipUnless(sys.platform.startswith("win"), "Windows PE DLL check")
+    def test_windows_gnina_reports_missing_libtorch_cuda_dll(self) -> None:
+        """The bundled Windows GNINA executable currently lacks libtorch CUDA DLLs."""
+        gnina = Path("tools/gnina/gnina.exe")
+        if not gnina.exists():
+            self.skipTest("Bundled Windows gnina.exe not present")
+        missing = native_tool_missing_dlls(gnina, {"PATH": ""})
+        self.assertIn("torch_cuda.dll", {name.lower() for name in missing})
 
     def test_extract_pose_model_returns_requested_block(self) -> None:
         """Only the requested MODEL block should be returned."""

@@ -2,10 +2,12 @@
 """Unit tests for PDBQT charge parsing and molecular format detection."""
 
 from pathlib import Path
+import types
 import tempfile
 import unittest
+from unittest import mock
 
-from core.converter import FileConverter
+from core.converter import ConversionResult, FileConverter
 from core.file_utils import _pdbqt_charge_value, validate_pdbqt_charges
 
 
@@ -69,6 +71,109 @@ class FormatDetectionTests(unittest.TestCase):
     def test_mol2_detected(self) -> None:
         mol2 = "@<TRIPOS>MOLECULE\nlig\n 1 0\n@<TRIPOS>ATOM\n 1 C 0.0 0.0 0.0 C.3\n"
         self.assertEqual(self._detect(mol2, ".mol2"), "mol2")
+
+
+class ConversionFallbackTests(unittest.TestCase):
+    """Cover conversion behavior that can be tested without real Open Babel."""
+
+    def test_ligand_preparation_keeps_largest_fragment(self) -> None:
+        """Salts/counterions should not produce disconnected ligand PDBQT files."""
+        try:
+            from rdkit import Chem
+        except ImportError:
+            self.skipTest("RDKit not installed")
+
+        mol = Chem.MolFromSmiles("CCO.[Na+]")
+        prepared, note = FileConverter._prepare_ligand_molecule(mol)
+        heavy_atomic_numbers = [
+            atom.GetAtomicNum() for atom in prepared.GetAtoms() if atom.GetAtomicNum() > 1
+        ]
+
+        self.assertNotIn(11, heavy_atomic_numbers)
+        self.assertIn("maior fragmento", note)
+
+    def test_openbabel_cli_fallback_writes_ligand_pdbqt(self) -> None:
+        """When the Python API fails, conversion should retry through obabel CLI."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            input_path = tmp_path / "ligand.sdf"
+            output_path = tmp_path / "ligand.pdbqt"
+            obabel = tmp_path / "obabel.exe"
+            input_path.write_text("fake sdf", encoding="utf-8")
+            obabel.write_text("", encoding="utf-8")
+            commands = []
+
+            def fake_run(command, **_kwargs):
+                commands.append(command)
+                output = Path(command[command.index("-O") + 1])
+                output.write_text(
+                    "ROOT\n"
+                    "ATOM      1  C   LIG     1       0.000   0.000   0.000  1.00  0.00     0.000 C\n"
+                    "ENDROOT\nTORSDOF 0\n",
+                    encoding="utf-8",
+                )
+                return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+            with (
+                mock.patch(
+                    "core.converter.FileConverter._convert_via_openbabel_py_api",
+                    return_value=ConversionResult(
+                        False, output_path, "", "Open Babel API failed"
+                    ),
+                ),
+                mock.patch("core.converter.find_obabel_executable", return_value=obabel),
+                mock.patch("core.converter.subprocess.run", side_effect=fake_run),
+            ):
+                result = FileConverter._convert_via_openbabel(
+                    input_path,
+                    output_path,
+                    receptor=False,
+                    previous_error="primary failed",
+                )
+
+        self.assertTrue(result.success)
+        self.assertIn("--partialcharge", commands[0])
+        self.assertIn("gasteiger", commands[0])
+
+    def test_openbabel_cli_fallback_uses_receptor_flag(self) -> None:
+        """Receptor fallback should pass Open Babel's rigid receptor flag."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            input_path = tmp_path / "receptor.pdb"
+            output_path = tmp_path / "receptor.pdbqt"
+            obabel = tmp_path / "obabel"
+            input_path.write_text("fake pdb", encoding="utf-8")
+            obabel.write_text("", encoding="utf-8")
+            commands = []
+
+            def fake_run(command, **_kwargs):
+                commands.append(command)
+                output = Path(command[command.index("-O") + 1])
+                output.write_text(
+                    "ATOM      1  C   REC     1       0.000   0.000   0.000  1.00  0.00     0.000 C\n",
+                    encoding="utf-8",
+                )
+                return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+            with (
+                mock.patch(
+                    "core.converter.FileConverter._convert_via_openbabel_py_api",
+                    return_value=ConversionResult(
+                        False, output_path, "", "Open Babel API failed"
+                    ),
+                ),
+                mock.patch("core.converter.find_obabel_executable", return_value=obabel),
+                mock.patch("core.converter.subprocess.run", side_effect=fake_run),
+            ):
+                result = FileConverter._convert_via_openbabel(
+                    input_path,
+                    output_path,
+                    receptor=True,
+                    previous_error="primary failed",
+                )
+
+        self.assertTrue(result.success)
+        self.assertIn("-xr", commands[0])
 
 
 if __name__ == "__main__":

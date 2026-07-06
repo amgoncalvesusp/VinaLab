@@ -19,11 +19,14 @@ import importlib.util
 import logging
 import math
 from pathlib import Path
+import subprocess
 import sys
 
 from core.file_utils import validate_ligand_pdbqt
+from core.native_tools import find_obabel_executable, native_tool_env
 
 logger = logging.getLogger(__name__)
+NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0
 
 
 @dataclass(frozen=True)
@@ -125,19 +128,7 @@ class FileConverter:
                     f"RDKit não conseguiu interpretar o ligante {input_format.upper()}."
                 )
 
-            # Sanitize and Kekulize to preserve aromatic ring geometry
-            Chem.SanitizeMol(mol)
-            Chem.Kekulize(mol, clearAromaticFlags=False)
-
-            # Add explicit hydrogens (many PDB files omit them)
-            mol = Chem.AddHs(mol, addCoords=True)
-
-            if mol.GetNumConformers() == 0:
-                params = AllChem.ETKDGv3()
-                if AllChem.EmbedMolecule(mol, params) != 0:
-                    raise ValueError(
-                        "RDKit não conseguiu gerar coordenadas 3D para o ligante."
-                    )
+            mol, preparation_note = FileConverter._prepare_ligand_molecule(mol)
 
             try:
                 AllChem.ComputeGasteigerCharges(mol)
@@ -153,6 +144,7 @@ class FileConverter:
 
             preparator = MoleculePreparation()
             setups = preparator.prepare(mol)
+            FileConverter._remove_stale_output(output_path)
             if hasattr(preparator, "write_pdbqt_file"):
                 preparator.write_pdbqt_file(str(output_path))
             else:
@@ -165,8 +157,14 @@ class FileConverter:
 
             pre_stats = FileConverter._bond_length_stats(mol)
             post_stats = FileConverter._bond_length_stats_from_pdbqt(output_path, mol)
+            message = (
+                f"Ligante {input_format.upper()} convertido com RDKit + Meeko "
+                "(cargas Gasteiger)."
+            )
+            if preparation_note:
+                message = f"{message}\n{preparation_note}"
             log = FileConverter._geometry_log(
-                f"Ligante {input_format.upper()} convertido com RDKit + Meeko (cargas Gasteiger).",
+                message,
                 pre_stats,
                 post_stats,
             )
@@ -298,6 +296,43 @@ class FileConverter:
         return Chem.MolFromMolBlock(mol_block, removeHs=False, sanitize=False)
 
     @staticmethod
+    def _prepare_ligand_molecule(mol) -> tuple[object, str]:
+        """Return an RDKit ligand ready for Meeko, keeping one covalent component."""
+        from rdkit import Chem
+        from rdkit.Chem import AllChem
+
+        working = Chem.Mol(mol)
+        Chem.SanitizeMol(working)
+
+        fragments = Chem.GetMolFrags(working, asMols=True, sanitizeFrags=True)
+        note = ""
+        if len(fragments) > 1:
+            selected = max(
+                fragments,
+                key=lambda fragment: sum(
+                    1 for atom in fragment.GetAtoms() if atom.GetAtomicNum() > 1
+                ),
+            )
+            note = (
+                "Ligante continha múltiplos fragmentos; mantido o maior fragmento "
+                "covalente para evitar sais/contraíons desconectados no PDBQT."
+            )
+            working = Chem.Mol(selected)
+
+        Chem.Kekulize(working, clearAromaticFlags=False)
+        working = Chem.AddHs(working, addCoords=True)
+
+        if working.GetNumConformers() == 0:
+            params = AllChem.ETKDGv3()
+            params.randomSeed = 61453
+            if AllChem.EmbedMolecule(working, params) != 0:
+                raise ValueError(
+                    "RDKit não conseguiu gerar coordenadas 3D para o ligante."
+                )
+            AllChem.MMFFOptimizeMolecule(working, maxIters=200)
+        return working, note
+
+    @staticmethod
     def _has_nan_charges(mol) -> bool:
         """Return True when any atom carries a NaN Gasteiger partial charge."""
         for atom in mol.GetAtoms():
@@ -401,6 +436,7 @@ class FileConverter:
         captured = io.StringIO()
         saved_argv = sys.argv
         exit_code: int = 0
+        FileConverter._remove_stale_output(output_path)
         try:
             sys.argv = argv
             with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(
@@ -501,11 +537,12 @@ class FileConverter:
             importlib.util.find_spec("meeko.cli.mk_prepare_receptor") is not None
         )
         openbabel_available = importlib.util.find_spec("openbabel") is not None
+        obabel_cli_available = find_obabel_executable() is not None
         return {
             "rdkit": importlib.util.find_spec("rdkit") is not None,
             "meeko": importlib.util.find_spec("meeko") is not None,
             "openbabel_py": openbabel_available,
-            "obabel_cli": openbabel_available,
+            "obabel_cli": obabel_cli_available,
             "mk_prepare_receptor": meeko_receptor,
         }
 
@@ -526,7 +563,7 @@ class FileConverter:
         }.get(suffix, "pdb")
 
     @staticmethod
-    def _convert_via_openbabel(
+    def _convert_via_openbabel_py_api(
         input_path: Path,
         output_path: Path,
         receptor: bool,
@@ -583,6 +620,100 @@ class FileConverter:
             "",
             f"{previous_error}\nOpen Babel não gerou o PDBQT.",
         )
+
+    @staticmethod
+    def _convert_via_openbabel(
+        input_path: Path,
+        output_path: Path,
+        receptor: bool,
+        previous_error: str,
+    ) -> ConversionResult:
+        """Convert to PDBQT with Open Babel API first, then the CLI runtime."""
+        FileConverter._remove_stale_output(output_path)
+        api_result = FileConverter._convert_via_openbabel_py_api(
+            input_path, output_path, receptor, previous_error
+        )
+        if api_result.success:
+            return api_result
+        cli_error = api_result.errors or previous_error
+        return FileConverter._convert_via_openbabel_cli(
+            input_path, output_path, receptor, cli_error
+        )
+
+    @staticmethod
+    def _convert_via_openbabel_cli(
+        input_path: Path,
+        output_path: Path,
+        receptor: bool,
+        previous_error: str,
+    ) -> ConversionResult:
+        """Convert to PDBQT through the bundled Open Babel CLI."""
+        obabel = find_obabel_executable()
+        if obabel is None:
+            return ConversionResult(
+                False,
+                output_path,
+                "",
+                f"{previous_error}\nOpen Babel CLI não encontrado.",
+            )
+
+        command = [str(obabel), str(input_path), "-O", str(output_path)]
+        if receptor:
+            command.append("-xr")
+        else:
+            command.extend(["-h", "--partialcharge", "gasteiger"])
+        try:
+            FileConverter._remove_stale_output(output_path)
+            completed = subprocess.run(
+                command,
+                env=native_tool_env(obabel),
+                capture_output=True,
+                text=True,
+                check=False,
+                creationflags=NO_WINDOW,
+            )
+        except OSError as exc:
+            return ConversionResult(
+                False,
+                output_path,
+                "",
+                f"{previous_error}\nOpen Babel CLI falhou ao iniciar: {exc}",
+            )
+        if completed.returncode != 0:
+            message = (
+                completed.stderr.strip()
+                or completed.stdout.strip()
+                or f"Open Babel CLI finalizou com código {completed.returncode}."
+            )
+            return ConversionResult(
+                False,
+                output_path,
+                completed.stdout,
+                f"{previous_error}\nOpen Babel CLI falhou: {message}",
+            )
+        if output_path.exists() and output_path.stat().st_size > 0:
+            descriptor = "Receptor" if receptor else "Ligante"
+            return ConversionResult(
+                True,
+                output_path,
+                f"{descriptor} convertido com Open Babel CLI (fallback).",
+                completed.stderr.strip(),
+            )
+        return ConversionResult(
+            False,
+            output_path,
+            completed.stdout,
+            f"{previous_error}\nOpen Babel CLI não gerou o PDBQT.",
+        )
+
+    @staticmethod
+    def _remove_stale_output(output_path: Path) -> None:
+        """Remove previous conversion output so stale files cannot look successful."""
+        try:
+            if output_path.exists():
+                output_path.unlink()
+        except OSError:
+            pass
 
     @staticmethod
     def _validated_ligand_result(
