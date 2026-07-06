@@ -7,11 +7,17 @@ import subprocess
 import traceback
 import sys
 
-# QtWebEngine's Chromium sandbox cannot run from PyInstaller's extracted _MEI
-# directory (chrome-sandbox is not SUID root there), so the first QWebEngineView
-# crashes the frozen Linux app immediately. Disable the sandbox before Qt loads.
+# QtWebEngine (molecular/plot viewers) is fragile in a frozen Linux build: the
+# Chromium sandbox cannot run from PyInstaller's extracted _MEI directory, and
+# the separate GPU/helper processes fail to start there, crashing the app on the
+# first QWebEngineView. Run WebEngine in-process with sandbox and GPU disabled so
+# it starts reliably. These must be set before Qt loads.
 if sys.platform.startswith("linux") and getattr(sys, "frozen", False):
     os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
+    os.environ.setdefault(
+        "QTWEBENGINE_CHROMIUM_FLAGS",
+        "--single-process --no-sandbox --disable-gpu",
+    )
 
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0
 
@@ -41,7 +47,10 @@ def main() -> int:
             vina_status = (
                 manager.verify_autodock_vina() if not missing else {"ok": False}
             )
-        if missing or not vina_status.get("ok"):
+        # In a frozen bundle there is no venv to repair and launcher.py is not
+        # shipped, so never take the launcher path there: show the window (it
+        # reports missing pieces via the status bar) instead of crashing.
+        if (missing or not vina_status.get("ok")) and not getattr(sys, "frozen", False):
             launcher_path = Path(__file__).resolve().parent / "launcher.py"
             if launcher_path.exists():
                 subprocess.Popen(
@@ -59,12 +68,17 @@ def main() -> int:
                 f"Ausente: {missing_names or 'AutoDock Vina'}"
             )
 
+        from PySide6.QtCore import QCoreApplication, Qt
         from PySide6.QtGui import QFont, QIcon
         from PySide6.QtWidgets import QApplication
 
         from core.responsive import ResponsiveManager
         from core.scrolling import WheelGuard
         from mainwindow import MainWindow
+
+        # QtWebEngine widgets require shared OpenGL contexts; must be set before
+        # the QApplication is created.
+        QCoreApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
 
         app = QApplication(sys.argv)
         app.setApplicationName("VinaLab")

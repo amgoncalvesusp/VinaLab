@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.0.9 - 2026-07-05
+
+- Corrige de fato o fechamento imediato no Linux: QtWebEngine agora roda em processo unico com GPU/sandbox desativados (`--single-process --no-sandbox --disable-gpu`) e `AA_ShareOpenGLContexts` e definido antes da `QApplication`.
+- O pacote congelado nao tenta mais rodar o `launcher.py` ausente quando a verificacao de ambiente falha, evitando um fechamento silencioso.
+
 ## 0.0.8 - 2026-07-04
 
 - Corrige o fechamento imediato do aplicativo no Linux: desativa o sandbox do QtWebEngine no pacote congelado (`QTWEBENGINE_DISABLE_SANDBOX`), que impedia a `QWebEngineView` de iniciar a partir do diretorio temporario do PyInstaller.
