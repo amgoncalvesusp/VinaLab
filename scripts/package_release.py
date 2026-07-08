@@ -19,7 +19,7 @@ DEB_PACKAGE_NAME = "vinalab"
 LINUX_ARCH = "amd64"
 LINUX_GNINA_PATH = Path("tools/gnina/gnina")
 LINUX_DEB_DEPENDS = (
-    "autodock-vina, libc6, libstdc++6, libgcc-s1, zlib1g, libgl1, libegl1, "
+    "autodock-vina, openbabel, libc6, libstdc++6, libgcc-s1, zlib1g, libgl1, libegl1, "
     "libxkbcommon-x11-0, libxcb-cursor0, libxcb-icccm4, libxcb-image0, "
     "libxcb-keysyms1, libxcb-randr0, libxcb-render-util0, libxcb-shape0, "
     "libxcb-xinerama0, libxcb-xfixes0, libnss3, libxcomposite1, "

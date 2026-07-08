@@ -66,8 +66,9 @@ class PackageReleaseTests(unittest.TestCase):
             self.assertIn("Version: 0.0.7", control_text)
             self.assertIn("Architecture: amd64", control_text)
             self.assertIn("autodock-vina", control_text)
+            self.assertIn("openbabel", control_text)
             self.assertIn("libxkbcommon-x11-0", control_text)
-            self.assertIn("Depends: autodock-vina,\n libc6,", control_text)
+            self.assertIn("Depends: autodock-vina,\n openbabel,\n libc6,", control_text)
 
     def test_prepare_linux_deb_tree_installs_gnina_when_provided(self) -> None:
         """The Ubuntu installer should ship the Linux GNINA scoring executable."""

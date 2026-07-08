@@ -265,12 +265,32 @@ def _openbabel_roots() -> list[Path]:
         bundle_dir / "openbabel",
         executable_dir / "openbabel",
         executable_dir / "Lib" / "site-packages" / "openbabel",
-        executable_dir / "lib" / "python3.10" / "site-packages" / "openbabel",
         executable_dir.parent / "Lib" / "site-packages" / "openbabel",
+        executable_dir.parent
+        / "lib"
+        / f"python{sys.version_info.major}.{sys.version_info.minor}"
+        / "site-packages"
+        / "openbabel",
         project_root / ".venv" / "Lib" / "site-packages" / "openbabel",
+        project_root
+        / ".venv"
+        / "lib"
+        / f"python{sys.version_info.major}.{sys.version_info.minor}"
+        / "site-packages"
+        / "openbabel",
         project_root / "openbabel",
         project_root / "vendor" / "openbabel",
     ]
+    if not sys.platform.startswith("win"):
+        roots.extend(
+            [
+                Path("/usr/lib/openbabel"),
+                Path("/usr/lib/x86_64-linux-gnu/openbabel"),
+                Path("/usr/local/lib/openbabel"),
+                Path("/usr/share/openbabel"),
+                Path("/usr/local/share/openbabel"),
+            ]
+        )
     spec = importlib.util.find_spec("openbabel")
     if spec is not None and spec.origin:
         roots.append(Path(spec.origin).resolve().parent)
@@ -287,12 +307,23 @@ def _openbabel_plugin_candidates(tool_dir: Path) -> list[Path]:
 def _openbabel_data_candidates(tool_dir: Path) -> list[Path]:
     candidates = [tool_dir / "data"]
     for root in _openbabel_roots():
+        share_openbabel = root / "share" / "openbabel"
+        candidates.extend(_child_directories(share_openbabel))
         candidates.extend(
             [
                 root / "data",
                 root / "bin" / "data",
-                root / "share" / "openbabel",
+                share_openbabel,
                 root / "share",
+            ]
+        )
+    if not sys.platform.startswith("win"):
+        candidates.extend(_child_directories(Path("/usr/share/openbabel")))
+        candidates.extend(_child_directories(Path("/usr/local/share/openbabel")))
+        candidates.extend(
+            [
+                Path("/usr/share/openbabel"),
+                Path("/usr/local/share/openbabel"),
             ]
         )
     return candidates
@@ -324,6 +355,12 @@ def _first_existing_path(*candidates: Path) -> Path | None:
         if candidate.exists():
             return candidate
     return None
+
+
+def _child_directories(path: Path) -> list[Path]:
+    if not path.exists() or not path.is_dir():
+        return []
+    return sorted(child for child in path.iterdir() if child.is_dir())
 
 
 def _first_plugin_dir(candidates: Sequence[Path]) -> Path | None:
