@@ -113,7 +113,7 @@ class DockingHelperTests(unittest.TestCase):
             with mock.patch("sys.executable", str(executable_dir / "python.exe")):
                 env = native_tool_env(tool_path, {"PATH": ""})
 
-        self.assertEqual(env["BABEL_LIBDIR"], str(plugin_dir.resolve()))
+            self.assertTrue(Path(env["BABEL_LIBDIR"]).samefile(plugin_dir))
 
     def test_native_tool_env_finds_posix_site_packages_openbabel(self) -> None:
         """Linux Python installs keep site-packages beside bin, not below it."""
@@ -141,8 +141,8 @@ class DockingHelperTests(unittest.TestCase):
             ):
                 env = native_tool_env(tool_path, {"PATH": ""})
 
-        self.assertEqual(env["BABEL_LIBDIR"], str(plugin_dir.resolve()))
-        self.assertEqual(env["BABEL_DATADIR"], str(data_dir.resolve()))
+            self.assertTrue(Path(env["BABEL_LIBDIR"]).samefile(plugin_dir))
+            self.assertEqual(env["BABEL_DATADIR"], str(data_dir.resolve()))
 
     def test_native_tool_env_accepts_linux_openbabel_so_plugins(self) -> None:
         """Ubuntu Open Babel packages ship format plugins as .so modules."""
@@ -167,7 +167,7 @@ class DockingHelperTests(unittest.TestCase):
             ):
                 env = native_tool_env(tool_path, {"PATH": ""})
 
-        self.assertEqual(env["BABEL_LIBDIR"], str(plugin_dir.resolve()))
+            self.assertTrue(Path(env["BABEL_LIBDIR"]).samefile(plugin_dir))
 
     def test_native_tool_env_overrides_invalid_openbabel_env(self) -> None:
         """Bundled tools should not inherit stale Open Babel plugin/data paths."""
