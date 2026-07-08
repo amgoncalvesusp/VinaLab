@@ -322,8 +322,14 @@ def _first_existing_path(*candidates: Path) -> Path | None:
 
 def _first_plugin_dir(candidates: Sequence[Path]) -> Path | None:
     for candidate in candidates:
-        if candidate.exists() and any(candidate.glob("*.obf")):
+        if not candidate.exists():
+            continue
+        immediate = next(candidate.glob("*.obf"), None)
+        if immediate is not None:
             return candidate
+        nested = next(candidate.rglob("*.obf"), None)
+        if nested is not None:
+            return nested.parent
     return None
 
 

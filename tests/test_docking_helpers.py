@@ -96,6 +96,25 @@ class DockingHelperTests(unittest.TestCase):
         self.assertEqual(env["BABEL_LIBDIR"], str(openbabel_bin.resolve()))
         self.assertEqual(env["BABEL_DATADIR"], str(openbabel_data.resolve()))
 
+    def test_native_tool_env_finds_nested_openbabel_plugins(self) -> None:
+        """openbabel-wheel can keep .obf plugins below a versioned package subdir."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            executable_dir = root / "Scripts"
+            package_root = root / "Lib" / "site-packages" / "openbabel"
+            plugin_dir = package_root / "share" / "openbabel" / "3.1.0"
+            data_dir = package_root / "data"
+            for path in (executable_dir, plugin_dir, data_dir):
+                path.mkdir(parents=True)
+            (plugin_dir / "formats_common.obf").write_text("", encoding="utf-8")
+            tool_path = executable_dir / "obabel.exe"
+            tool_path.write_text("", encoding="utf-8")
+
+            with mock.patch("sys.executable", str(executable_dir / "python.exe")):
+                env = native_tool_env(tool_path, {"PATH": ""})
+
+        self.assertEqual(env["BABEL_LIBDIR"], str(plugin_dir.resolve()))
+
     def test_find_native_executable_prefers_python_scripts_before_path(self) -> None:
         """Bundled CLI discovery should not accidentally prefer unrelated PATH tools."""
         with tempfile.TemporaryDirectory() as tmpdir:

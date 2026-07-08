@@ -111,7 +111,18 @@ def find_openbabel_plugin_dirs():
         package_dir / "bin",
         package_dir / "plugins",
     ]
-    return [candidate for candidate in candidates if list(candidate.glob("*.obf"))]
+    plugin_dirs = []
+    seen = set()
+    for candidate in candidates:
+        if not candidate.exists():
+            continue
+        for plugin in candidate.rglob("*.obf"):
+            plugin_dir = plugin.parent
+            key = str(plugin_dir).lower() if sys.platform.startswith("win") else str(plugin_dir)
+            if key not in seen:
+                seen.add(key)
+                plugin_dirs.append(plugin_dir)
+    return plugin_dirs
 
 
 # meeko 0.7 imports prody at top level, prody imports Biopython, and Biopython's
