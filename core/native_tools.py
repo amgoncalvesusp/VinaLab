@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+import importlib.util
 import os
 from pathlib import Path
 import shutil
@@ -263,11 +264,16 @@ def _openbabel_roots() -> list[Path]:
     roots = [
         bundle_dir / "openbabel",
         executable_dir / "openbabel",
+        executable_dir / "Lib" / "site-packages" / "openbabel",
+        executable_dir / "lib" / "python3.10" / "site-packages" / "openbabel",
         executable_dir.parent / "Lib" / "site-packages" / "openbabel",
         project_root / ".venv" / "Lib" / "site-packages" / "openbabel",
         project_root / "openbabel",
         project_root / "vendor" / "openbabel",
     ]
+    spec = importlib.util.find_spec("openbabel")
+    if spec is not None and spec.origin:
+        roots.append(Path(spec.origin).resolve().parent)
     return _dedupe_existing_paths(roots)
 
 
