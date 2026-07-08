@@ -115,6 +115,32 @@ class DockingHelperTests(unittest.TestCase):
 
         self.assertEqual(env["BABEL_LIBDIR"], str(plugin_dir.resolve()))
 
+    def test_native_tool_env_overrides_invalid_openbabel_env(self) -> None:
+        """Bundled tools should not inherit stale Open Babel plugin/data paths."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            executable_dir = root / "Scripts"
+            openbabel_bin = root / "Lib" / "site-packages" / "openbabel" / "bin"
+            openbabel_data = openbabel_bin / "data"
+            for path in (executable_dir, openbabel_bin, openbabel_data):
+                path.mkdir(parents=True)
+            (openbabel_bin / "formats_common.obf").write_text("", encoding="utf-8")
+            tool_path = executable_dir / "obabel.exe"
+            tool_path.write_text("", encoding="utf-8")
+
+            with mock.patch("sys.executable", str(executable_dir / "python.exe")):
+                env = native_tool_env(
+                    tool_path,
+                    {
+                        "PATH": "",
+                        "BABEL_LIBDIR": str(root / "missing-plugins"),
+                        "BABEL_DATADIR": str(root / "missing-data"),
+                    },
+                )
+
+        self.assertEqual(env["BABEL_LIBDIR"], str(openbabel_bin.resolve()))
+        self.assertEqual(env["BABEL_DATADIR"], str(openbabel_data.resolve()))
+
     def test_find_native_executable_prefers_python_scripts_before_path(self) -> None:
         """Bundled CLI discovery should not accidentally prefer unrelated PATH tools."""
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -130,10 +130,10 @@ def native_tool_env(
 
     openbabel_plugins = _first_plugin_dir(_openbabel_plugin_candidates(tool_dir))
     if openbabel_plugins is not None:
-        env.setdefault("BABEL_LIBDIR", str(openbabel_plugins))
+        env["BABEL_LIBDIR"] = str(openbabel_plugins)
     openbabel_data = _first_existing_path(*_openbabel_data_candidates(tool_dir))
     if openbabel_data is not None:
-        env.setdefault("BABEL_DATADIR", str(openbabel_data))
+        env["BABEL_DATADIR"] = str(openbabel_data)
     if not sys.platform.startswith("win"):
         _prepend_env_path(env, "LD_LIBRARY_PATH", *_openbabel_library_paths())
     return env
