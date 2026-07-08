@@ -367,13 +367,24 @@ def _first_plugin_dir(candidates: Sequence[Path]) -> Path | None:
     for candidate in candidates:
         if not candidate.exists():
             continue
-        immediate = next(candidate.glob("*.obf"), None)
-        if immediate is not None:
+        if _contains_openbabel_plugin(candidate):
             return candidate
-        nested = next(candidate.rglob("*.obf"), None)
+        nested = next(_iter_openbabel_plugin_files(candidate), None)
         if nested is not None:
             return nested.parent
     return None
+
+
+def _contains_openbabel_plugin(directory: Path) -> bool:
+    return any(_iter_openbabel_plugin_files(directory, recursive=False))
+
+
+def _iter_openbabel_plugin_files(path: Path, recursive: bool = True):
+    patterns = ("*.obf",)
+    if not sys.platform.startswith("win"):
+        patterns = (*patterns, "*format.so", "plugin_*.so")
+    for pattern in patterns:
+        yield from (path.rglob(pattern) if recursive else path.glob(pattern))
 
 
 def _dedupe_existing_paths(paths: Sequence[Path]) -> list[Path]:

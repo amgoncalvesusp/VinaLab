@@ -107,6 +107,48 @@ class RuntimeDependencyCheckTests(unittest.TestCase):
             ):
                 self.assertEqual(check_runtime_dependencies.main(), 1)
 
+    def test_openbabel_runtime_accepts_linux_so_plugins(self) -> None:
+        """Linux Open Babel packages expose plugins as shared objects."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            obabel = root / "obabel"
+            vina = root / "vina"
+            plugins = root / "openbabel" / "3.1.1"
+            data = root / "share" / "openbabel" / "3.1.1"
+            for path in (plugins, data):
+                path.mkdir(parents=True)
+            obabel.write_text("", encoding="utf-8")
+            vina.write_text("", encoding="utf-8")
+            (plugins / "pdbqtformat.so").write_text("", encoding="utf-8")
+
+            with (
+                mock.patch.object(
+                    check_runtime_dependencies.importlib,
+                    "import_module",
+                    return_value=object(),
+                ),
+                mock.patch.object(
+                    check_runtime_dependencies,
+                    "find_obabel_executable",
+                    return_value=obabel,
+                ),
+                mock.patch.object(
+                    check_runtime_dependencies,
+                    "find_vina_executable",
+                    return_value=vina,
+                ),
+                mock.patch.object(
+                    check_runtime_dependencies,
+                    "native_tool_env",
+                    return_value={
+                        "BABEL_LIBDIR": str(plugins),
+                        "BABEL_DATADIR": str(data),
+                    },
+                ),
+                mock.patch.object(check_runtime_dependencies.sys, "platform", "linux"),
+            ):
+                self.assertEqual(check_runtime_dependencies.main(), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

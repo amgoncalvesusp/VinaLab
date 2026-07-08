@@ -60,9 +60,9 @@ def main() -> int:
         if (
             babel_libdir is None
             or not babel_libdir.exists()
-            or not any(babel_libdir.glob("*.obf"))
+            or not _has_openbabel_plugins(babel_libdir)
         ):
-            failures.append("Open Babel .obf plugins were not found via BABEL_LIBDIR")
+            failures.append("Open Babel plugins were not found via BABEL_LIBDIR")
         if babel_datadir is None or not babel_datadir.exists():
             failures.append("Open Babel data directory was not found via BABEL_DATADIR")
         if sys.platform.startswith("win") and _openbabel_wheel_libs() is None:
@@ -85,6 +85,13 @@ def _openbabel_wheel_libs() -> Path | None:
         return None
     libs = Path(spec.origin).resolve().parents[1] / "openbabel_wheel.libs"
     return libs if libs.exists() else None
+
+
+def _has_openbabel_plugins(directory: Path) -> bool:
+    patterns = ("*.obf",)
+    if not sys.platform.startswith("win"):
+        patterns = (*patterns, "*format.so", "plugin_*.so")
+    return any(plugin for pattern in patterns for plugin in directory.glob(pattern))
 
 
 if __name__ == "__main__":

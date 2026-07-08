@@ -144,6 +144,31 @@ class DockingHelperTests(unittest.TestCase):
         self.assertEqual(env["BABEL_LIBDIR"], str(plugin_dir.resolve()))
         self.assertEqual(env["BABEL_DATADIR"], str(data_dir.resolve()))
 
+    def test_native_tool_env_accepts_linux_openbabel_so_plugins(self) -> None:
+        """Ubuntu Open Babel packages ship format plugins as .so modules."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            executable_dir = root / "bin"
+            plugin_dir = root / "lib" / "openbabel" / "3.1.1"
+            data_dir = root / "share" / "openbabel" / "3.1.1"
+            for path in (executable_dir, plugin_dir, data_dir):
+                path.mkdir(parents=True)
+            (plugin_dir / "pdbqtformat.so").write_text("", encoding="utf-8")
+            tool_path = executable_dir / "obabel"
+            tool_path.write_text("", encoding="utf-8")
+
+            with (
+                mock.patch("sys.executable", str(executable_dir / "python")),
+                mock.patch("sys.platform", "linux"),
+                mock.patch(
+                    "core.native_tools._openbabel_roots",
+                    return_value=[plugin_dir.parent, data_dir.parent],
+                ),
+            ):
+                env = native_tool_env(tool_path, {"PATH": ""})
+
+        self.assertEqual(env["BABEL_LIBDIR"], str(plugin_dir.resolve()))
+
     def test_native_tool_env_overrides_invalid_openbabel_env(self) -> None:
         """Bundled tools should not inherit stale Open Babel plugin/data paths."""
         with tempfile.TemporaryDirectory() as tmpdir:
