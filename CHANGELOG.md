@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.1 - 2026-07-07
+
+- Remove GNINA dos builds Windows; a UI Windows exibe apenas Vina/Vinardo/AD4 e pontuadores opcionais disponiveis.
+- Mantem GNINA apenas para Linux/WSL ou builds futuros com bundle nativo comprovadamente completo.
+- Garante que o fallback AutoDock Vina CLI rode com `native_tool_env`, igual aos outros binarios nativos.
+- Reforca a checagem de runtime empacotado para RDKit, Meeko, `meeko.cli.mk_prepare_receptor`, Open Babel, `obabel`, plugins `.obf`, `openbabel_wheel.libs` e Vina CLI.
+- Adiciona SMINA como backend opcional detectado em `tools/smina`, PATH ou Conda, sem bloquear builds Windows/Linux.
+- Adiciona testes de regressao para ausencia de GNINA/libtorch no spec Windows, ambiente do Vina CLI, runtime Open Babel e smoke tests opcionais de conversao/docking.
+
 ## 1.0.0 - 2026-07-06
 
 - Evita janelas de erro do Windows ao detectar DLLs nativas ausentes do `gnina.exe` antes de iniciar o processo.

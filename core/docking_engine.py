@@ -28,6 +28,7 @@ from core.file_utils import (
 from core.native_tools import (
     find_obabel_executable as find_obabel_path,
     find_gnina_executable,
+    find_smina_executable,
     find_vina_executable,
     native_tool_env,
 )
@@ -89,6 +90,7 @@ VINA_SCORING_NAMES = {
     "vinardo": ("Vinardo", "vinardo"),
     "ad4": ("AutoDock4 (ad4)", "ad4"),
     "gnina": ("GNINA (CNN)", None),
+    "smina": ("SMINA", None),
 }
 
 
@@ -219,15 +221,26 @@ class DockingWorker(QThread):
     def run(self) -> None:
         """Execute all docking jobs and emit incremental results."""
         gnina_cli = self._gnina_cli_path()
+        smina_cli = self._smina_cli_path()
         selected_scoring = self._selected_scoring_functions()
         if "gnina" in selected_scoring and gnina_cli is None:
+            if sys.platform.startswith("win"):
+                self.error_signal.emit(
+                    "GNINA não está disponível na versão Windows; use Linux/WSL se precisar da pontuação CNN."
+                )
+            else:
+                self.error_signal.emit(
+                    "GNINA not found. Put gnina in tools/gnina, add gnina to PATH, or select another scoring function."
+                )
+            return
+        if "smina" in selected_scoring and smina_cli is None:
             self.error_signal.emit(
-                "GNINA not found. Put gnina.exe in tools/gnina, add gnina to PATH, or select another scoring function."
+                "SMINA não foi encontrado. Instale smina e adicione ao PATH/Conda, ou coloque o executável em tools/smina."
             )
             return
         vina_cli = self._vina_cli_path()
         if (
-            any(scoring_key != "gnina" for scoring_key in selected_scoring)
+            any(scoring_key not in {"gnina", "smina"} for scoring_key in selected_scoring)
             and Vina is None
             and vina_cli is None
         ):
@@ -271,7 +284,7 @@ class DockingWorker(QThread):
                     if grid_warning:
                         self.log_signal.emit(f"AVISO {grid_warning}")
                     ligand_results = self._run_ligand_with_scoring(
-                        ligand_path, scoring_key, gnina_cli, vina_cli
+                        ligand_path, scoring_key, gnina_cli, smina_cli, vina_cli
                     )
                     all_results.extend(ligand_results)
                     self.result_signal.emit(ligand_results)
@@ -304,6 +317,7 @@ class DockingWorker(QThread):
         ligand_path: Path,
         scoring_key: str,
         gnina_cli: Path | None,
+        smina_cli: Path | None,
         vina_cli: Path | None,
     ) -> list[dict]:
         """Dock or score one ligand with one selected scoring function."""
@@ -322,6 +336,10 @@ class DockingWorker(QThread):
                 if gnina_cli is None:
                     raise RuntimeError("O executável GNINA não está disponível.")
                 rows = self._dock_single_ligand_gnina(ligand_path, gnina_cli)
+            elif scoring_key == "smina":
+                if smina_cli is None:
+                    raise RuntimeError("O executável SMINA não está disponível.")
+                rows = self._dock_single_ligand_smina(ligand_path, smina_cli)
             elif scoring_key in VINA_SCORING_NAMES:
                 rows = (
                     self._dock_single_ligand(ligand_path)
@@ -688,7 +706,8 @@ class DockingWorker(QThread):
         if sf_name == "ad4":
             raise RuntimeError(
                 "AutoDock4 (ad4) exige mapas de afinidade pré-calculados pelo AutoGrid4, "
-                "que não estão incluídos nesta versão. Use Vina, Vinardo ou GNINA. "
+                "que não estão incluídos nesta versão. Use Vina ou Vinardo. "
+                "No Windows, GNINA não está disponível; use Linux/WSL se precisar da pontuação CNN. "
                 "Para habilitar o ad4, é necessário fornecer o autogrid4 e gerar os mapas."
             )
         vina_instance = Vina(
@@ -799,6 +818,70 @@ class DockingWorker(QThread):
         clean_pdbqt_file(output_file)
         return self.parse_output_pdbqt(output_file, ligand_name)
 
+    def _dock_single_ligand_smina(
+        self, ligand_path: Path, smina_cli: Path
+    ) -> list[dict]:
+        """Dock a single ligand with optional smina CLI."""
+        ligand_name = self._ligand_display_name(ligand_path)
+        output_file = (
+            self.output_directory / f"{safe_stem(Path(ligand_name))}_smina_out.pdbqt"
+        )
+        receptor_for_maps = self.rigid_receptor_path or self.receptor_path
+        command = [
+            str(smina_cli),
+            "--receptor",
+            str(receptor_for_maps),
+            "--ligand",
+            str(ligand_path),
+            "--center_x",
+            str(float(self.parameters["center_x"])),
+            "--center_y",
+            str(float(self.parameters["center_y"])),
+            "--center_z",
+            str(float(self.parameters["center_z"])),
+            "--size_x",
+            str(float(self.parameters["size_x"])),
+            "--size_y",
+            str(float(self.parameters["size_y"])),
+            "--size_z",
+            str(float(self.parameters["size_z"])),
+            "--exhaustiveness",
+            str(int(self.parameters["exhaustiveness"])),
+            "--num_modes",
+            str(int(self.parameters["num_modes"])),
+            "--energy_range",
+            str(float(self.parameters["energy_range"])),
+            "--min_rmsd",
+            str(float(self.parameters["min_rmsd"])),
+            "--cpu",
+            str(int(self.parameters["cpu"])),
+            "--out",
+            str(output_file),
+        ]
+        if int(self.parameters["seed"]) != 0:
+            command.extend(["--seed", str(int(self.parameters["seed"]))])
+        if self.flexible_receptor_path:
+            command.extend(["--flex", str(self.flexible_receptor_path)])
+
+        self.log_signal.emit(f"Executando docking de {ligand_name} com SMINA.")
+        completed = subprocess.run(
+            command,
+            cwd=self.output_directory,
+            env=native_tool_env(smina_cli),
+            capture_output=True,
+            text=True,
+            check=False,
+            creationflags=NO_WINDOW,
+        )
+        for line in completed.stdout.splitlines():
+            self.log_signal.emit(line)
+        for line in completed.stderr.splitlines():
+            self.log_signal.emit(line)
+        if completed.returncode != 0:
+            raise RuntimeError(f"SMINA finalizou com código {completed.returncode}.")
+        clean_pdbqt_file(output_file)
+        return self.parse_output_pdbqt(output_file, ligand_name)
+
     def _dock_single_ligand_cli(self, ligand_path: Path, vina_cli: Path) -> list[dict]:
         """Dock a single ligand with the bundled Vina CLI fallback."""
         sf_name = (
@@ -807,7 +890,8 @@ class DockingWorker(QThread):
         if sf_name == "ad4":
             raise RuntimeError(
                 "AutoDock4 (ad4) exige mapas de afinidade pré-calculados pelo AutoGrid4, "
-                "que não estão incluídos nesta versão. Use Vina, Vinardo ou GNINA. "
+                "que não estão incluídos nesta versão. Use Vina ou Vinardo. "
+                "No Windows, GNINA não está disponível; use Linux/WSL se precisar da pontuação CNN. "
                 "Para habilitar o ad4, é necessário fornecer o autogrid4 e gerar os mapas."
             )
         ligand_name = self._ligand_display_name(ligand_path)
@@ -866,6 +950,7 @@ class DockingWorker(QThread):
         completed = subprocess.run(
             command,
             cwd=self.output_directory,
+            env=native_tool_env(vina_cli),
             capture_output=True,
             text=True,
             check=False,

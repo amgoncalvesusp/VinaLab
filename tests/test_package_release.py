@@ -11,6 +11,16 @@ from scripts.package_release import prepare_linux_deb_tree
 class PackageReleaseTests(unittest.TestCase):
     """Cover installer layout without requiring platform-specific build tools."""
 
+    def test_windows_pyinstaller_spec_has_no_gnina_bundle(self) -> None:
+        """Windows PyInstaller builds should not include GNINA or libtorch DLLs."""
+        spec_text = Path("VinaGUI.spec").read_text(encoding="utf-8")
+
+        self.assertNotIn('("tools/gnina", "tools/gnina")', spec_text)
+        self.assertNotIn("collect_windows_gnina_torch_dlls", spec_text)
+        self.assertNotIn("torch_cuda.dll", spec_text)
+        self.assertNotIn("torch_cpu.dll", spec_text)
+        self.assertNotIn("c10.dll", spec_text)
+
     def test_prepare_linux_deb_tree_installs_launcher_desktop_and_icon(self) -> None:
         """The Ubuntu installer tree should expose a runnable system command."""
         with tempfile.TemporaryDirectory() as tmpdir:

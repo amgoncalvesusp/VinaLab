@@ -28,11 +28,14 @@ sys.modules.setdefault("PySide6", types.ModuleType("PySide6"))
 sys.modules["PySide6.QtCore"] = qtcore
 
 from core.docking_engine import (
+    DockingWorker,
     discover_external_scoring_functions,
     extract_pose_model,
 )
 from core.native_tools import (
+    find_gnina_executable,
     find_native_executable,
+    find_smina_executable,
     find_vina_executable,
     native_tool_env,
     native_tool_missing_dlls,
@@ -118,6 +121,21 @@ class DockingHelperTests(unittest.TestCase):
                 found = find_vina_executable()
         self.assertEqual(found, tool_path.resolve())
 
+    def test_find_smina_executable_supports_tools_directory(self) -> None:
+        """Optional smina should be discoverable from tools/smina without being required."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            tool_path = root / "tools" / "smina" / "smina.exe"
+            tool_path.parent.mkdir(parents=True)
+            tool_path.write_text("", encoding="utf-8")
+            with (
+                mock.patch("sys.executable", str(root / "VinaLab.exe")),
+                mock.patch("sys.platform", "win32"),
+                mock.patch("core.native_tools.native_tool_missing_dlls", return_value=()),
+            ):
+                found = find_smina_executable()
+        self.assertEqual(found, tool_path.resolve())
+
     def test_native_tool_starts_rejects_non_executable_payload(self) -> None:
         """A discovered native tool must actually launch before it is advertised."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -141,13 +159,121 @@ class DockingHelperTests(unittest.TestCase):
             run_mock.assert_not_called()
 
     @unittest.skipUnless(sys.platform.startswith("win"), "Windows PE DLL check")
-    def test_windows_gnina_reports_missing_libtorch_cuda_dll(self) -> None:
-        """The bundled Windows GNINA executable currently lacks libtorch CUDA DLLs."""
-        gnina = Path("tools/gnina/gnina.exe")
-        if not gnina.exists():
-            self.skipTest("Bundled Windows gnina.exe not present")
-        missing = native_tool_missing_dlls(gnina, {"PATH": ""})
-        self.assertIn("torch_cuda.dll", {name.lower() for name in missing})
+    def test_windows_gnina_is_not_discovered(self) -> None:
+        """Windows builds should not advertise GNINA from PATH or tools/gnina."""
+        self.assertIsNone(find_gnina_executable())
+
+    def test_vina_cli_docking_uses_native_tool_env(self) -> None:
+        """The bundled Vina CLI fallback must inherit native DLL/plugin paths."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            receptor = tmp_path / "receptor.pdbqt"
+            ligand = tmp_path / "ligand.pdbqt"
+            vina = tmp_path / "vina.exe"
+            receptor.write_text("", encoding="utf-8")
+            ligand.write_text("", encoding="utf-8")
+            vina.write_text("", encoding="utf-8")
+            worker = DockingWorker(
+                receptor,
+                None,
+                None,
+                [ligand],
+                tmp_path,
+                {
+                    "scoring_function": "vina",
+                    "vina_sf_name": "vina",
+                    "center_x": 0,
+                    "center_y": 0,
+                    "center_z": 0,
+                    "size_x": 10,
+                    "size_y": 10,
+                    "size_z": 10,
+                    "exhaustiveness": 1,
+                    "num_modes": 1,
+                    "energy_range": 3,
+                    "min_rmsd": 1,
+                    "cpu": 1,
+                    "seed": 0,
+                },
+            )
+            worker.log_signal = types.SimpleNamespace(emit=lambda _message: None)
+
+            def fake_run(command, **_kwargs):
+                output = Path(command[command.index("--out") + 1])
+                output.write_text(
+                    "MODEL 1\nREMARK VINA RESULT: -1.0 0.0 0.0\nENDMDL\n",
+                    encoding="utf-8",
+                )
+                return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+            with (
+                mock.patch(
+                    "core.docking_engine.native_tool_env",
+                    return_value={"PATH": "native"},
+                ) as env_mock,
+                mock.patch("core.docking_engine.subprocess.run", side_effect=fake_run) as run_mock,
+            ):
+                rows = worker._dock_single_ligand_cli(ligand, vina)
+
+        env_mock.assert_called_once_with(vina)
+        self.assertEqual(run_mock.call_args.kwargs["env"], {"PATH": "native"})
+        self.assertEqual(rows[0]["affinity"], -1.0)
+
+    def test_smina_cli_docking_uses_native_tool_env(self) -> None:
+        """Optional SMINA docking should run through the same native environment."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            receptor = tmp_path / "receptor.pdbqt"
+            ligand = tmp_path / "ligand.pdbqt"
+            smina = tmp_path / "smina.exe"
+            receptor.write_text("", encoding="utf-8")
+            ligand.write_text("", encoding="utf-8")
+            smina.write_text("", encoding="utf-8")
+            worker = DockingWorker(
+                receptor,
+                None,
+                None,
+                [ligand],
+                tmp_path,
+                {
+                    "scoring_function": "smina",
+                    "vina_sf_name": None,
+                    "center_x": 0,
+                    "center_y": 0,
+                    "center_z": 0,
+                    "size_x": 10,
+                    "size_y": 10,
+                    "size_z": 10,
+                    "exhaustiveness": 1,
+                    "num_modes": 1,
+                    "energy_range": 3,
+                    "min_rmsd": 1,
+                    "cpu": 1,
+                    "seed": 0,
+                },
+            )
+            worker.log_signal = types.SimpleNamespace(emit=lambda _message: None)
+
+            def fake_run(command, **_kwargs):
+                output = Path(command[command.index("--out") + 1])
+                output.write_text(
+                    "MODEL 1\nREMARK VINA RESULT: -2.0 0.0 0.0\nENDMDL\n",
+                    encoding="utf-8",
+                )
+                return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+            with (
+                mock.patch(
+                    "core.docking_engine.native_tool_env",
+                    return_value={"PATH": "smina-native"},
+                ) as env_mock,
+                mock.patch("core.docking_engine.subprocess.run", side_effect=fake_run) as run_mock,
+            ):
+                rows = worker._dock_single_ligand_smina(ligand, smina)
+
+        env_mock.assert_called_once_with(smina)
+        self.assertEqual(run_mock.call_args.kwargs["env"], {"PATH": "smina-native"})
+        self.assertEqual(rows[0]["affinity"], -2.0)
 
     def test_extract_pose_model_returns_requested_block(self) -> None:
         """Only the requested MODEL block should be returned."""

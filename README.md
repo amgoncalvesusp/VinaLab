@@ -29,6 +29,8 @@ The portable package can also be extracted and run directly:
 VinaLab.exe
 ```
 
+Windows builds include the bundled AutoDock Vina CLI fallback and support Vina/Vinardo docking. GNINA is not available in the Windows version; use Linux/WSL if you need CNN scoring. SMINA is optional: install it through PATH/Conda or place `smina.exe` under `tools/smina` beside the app to enable the SMINA backend.
+
 ### Ubuntu Linux
 
 Download and install the Ubuntu package with apt so system dependencies are resolved:
@@ -106,6 +108,8 @@ O pacote portatil tambem pode ser extraido e executado diretamente:
 ```bat
 VinaLab.exe
 ```
+
+Os builds Windows incluem o fallback CLI do AutoDock Vina e suportam docking Vina/Vinardo. GNINA nao esta disponivel na versao Windows; use Linux/WSL se precisar da pontuacao CNN. SMINA e opcional: instale via PATH/Conda ou coloque `smina.exe` em `tools/smina` ao lado do app para habilitar o backend SMINA.
 
 ### Ubuntu Linux
 

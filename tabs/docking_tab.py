@@ -13,6 +13,7 @@ Scoring-function ranking based on benchmark literature (2021-2025):
 
 import json
 from pathlib import Path
+import sys
 
 from PySide6.QtCore import Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
@@ -47,7 +48,7 @@ from core.docking_engine import (
 from core.environment_manager import EnvironmentManager
 from core.file_utils import is_pdbqt_file, pdbqt_coordinate_bounds, pdbqt_receptor_atoms
 from core.i18n import I18n
-from core.native_tools import find_gnina_executable
+from core.native_tools import find_gnina_executable, find_smina_executable
 from core.scrolling import ScrollManager
 
 
@@ -75,6 +76,18 @@ SCORING_OPTIONS = [
         "available_check": "always",
         "vina_sf_name": "vinardo",
         "stars": 3,
+    },
+    {
+        "key": "smina",
+        "label_pt": "SMINA",
+        "label_en": "SMINA",
+        "desc_pt": "Fork do AutoDock Vina para docking, minimização e desenvolvimento de scoring functions. Opcional no Windows/Linux.",
+        "desc_en": "AutoDock Vina fork for docking, minimization, and scoring-function development. Optional on Windows/Linux.",
+        "ref_url": "https://sourceforge.net/projects/smina/",
+        "ref_label": "smina SourceForge",
+        "available_check": "smina_binary",
+        "vina_sf_name": None,
+        "stars": 2,
     },
     {
         "key": "vina",
@@ -314,7 +327,11 @@ class ScoringFunctionSelector(QGroupBox):
 
     def _ranked_options(self) -> list[dict]:
         """Return scoring options ordered by literature-based recommendation."""
-        native = {option["key"]: option for option in SCORING_OPTIONS}
+        native = {
+            option["key"]: option
+            for option in SCORING_OPTIONS
+            if not (sys.platform.startswith("win") and option["key"] == "gnina")
+        }
         external = {option["key"]: option for option in self._external_options()}
         order = [
             "rtmscore",
@@ -322,6 +339,7 @@ class ScoringFunctionSelector(QGroupBox):
             "delta_vina_xgb",
             "deltavina_rf20",
             "vinardo",
+            "smina",
             "vina",
             "ad4",
         ]
@@ -346,6 +364,8 @@ class ScoringFunctionSelector(QGroupBox):
         """Return a user-facing reason when a scoring option is unavailable."""
         if option["available_check"] == "gnina_binary" and _gnina_executable() is None:
             return I18n.get("scoring_gnina_warn", lang)
+        if option["available_check"] == "smina_binary" and _smina_executable() is None:
+            return I18n.get("scoring_smina_warn", lang)
         if option["available_check"] == "archive" and not option.get(
             "archive_available", False
         ):
@@ -1226,7 +1246,7 @@ class DockingTab(QWidget):
         for scoring_key in self.scoring_selector.selected_keys():
             option = self.scoring_selector.option_for_key(scoring_key)
             label = option["label_en"] if option else scoring_key
-            if scoring_key in {"vina", "vinardo", "ad4", "gnina"}:
+            if scoring_key in {"vina", "vinardo", "ad4", "gnina", "smina"}:
                 unavailable = (
                     self.scoring_selector.unavailable_reason(option, self.lang)
                     if option
@@ -1575,3 +1595,8 @@ class DockingTab(QWidget):
 def _gnina_executable() -> Path | None:
     """Return a GNINA executable from PATH or the local tools directory."""
     return find_gnina_executable()
+
+
+def _smina_executable() -> Path | None:
+    """Return a smina executable from PATH or the local tools directory."""
+    return find_smina_executable()

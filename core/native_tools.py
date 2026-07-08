@@ -31,10 +31,21 @@ def find_obabel_executable() -> Path | None:
 
 
 def find_gnina_executable() -> Path | None:
-    """Return GNINA only when the executable can start with its local DLLs."""
+    """Return GNINA only on Linux/WSL when the executable can start."""
+    if sys.platform.startswith("win"):
+        return None
     names = ("gnina.exe", "gnina") if sys.platform.startswith("win") else ("gnina",)
     for candidate in iter_native_executable_candidates(names, "gnina"):
         if candidate.exists() and candidate.is_file() and native_tool_starts(candidate):
+            return candidate
+    return None
+
+
+def find_smina_executable() -> Path | None:
+    """Return a bundled or PATH smina CLI when its direct DLLs are resolvable."""
+    names = ("smina.exe", "smina") if sys.platform.startswith("win") else ("smina",)
+    for candidate in iter_native_executable_candidates(names, "smina"):
+        if candidate.exists() and candidate.is_file() and not native_tool_missing_dlls(candidate):
             return candidate
     return None
 

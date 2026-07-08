@@ -2,9 +2,9 @@
 
 from pathlib import Path
 import glob
+import importlib
 import os
 import shutil
-import subprocess
 import sys
 
 from PyInstaller.utils.hooks import collect_all
@@ -76,45 +76,42 @@ def find_build_vina():
     return None
 
 
-def bundled_windows_gnina_exists():
-    name = "gnina.exe"
-    gnina = Path("tools") / "gnina" / name
-    return gnina.exists() and gnina.is_file()
-
-
-def collect_windows_gnina_torch_dlls():
-    """Bundle libtorch DLLs for GNINA when a compatible CUDA torch is available."""
-    if not sys.platform.startswith("win") or not bundled_windows_gnina_exists():
-        return []
-    required = ("c10.dll", "torch_cpu.dll", "torch_cuda.dll")
-    search_roots = []
-    libtorch_bin = os.environ.get("LIBTORCH_BIN")
-    if libtorch_bin:
-        search_roots.append(Path(libtorch_bin))
+def require_build_import(import_name):
     try:
-        import torch
+        importlib.import_module(import_name)
+    except Exception as exc:
+        raise SystemExit(
+            f"{import_name} is required for the Windows conversion runtime: {exc}"
+        )
 
-        search_roots.append(Path(torch.__file__).resolve().parent / "lib")
+
+def find_openbabel_wheel_libs():
+    try:
+        openbabel_spec = importlib.util.find_spec("openbabel")
     except Exception:
-        pass
-    found = []
-    missing = []
-    for dll_name in required:
-        dll_path = next(
-            (root / dll_name for root in search_roots if (root / dll_name).is_file()),
-            None,
-        )
-        if dll_path is None:
-            missing.append(dll_name)
-        else:
-            found.append((str(dll_path), "tools/gnina"))
-    if missing:
-        print(
-            "GNINA Windows libtorch DLLs not fully bundled; missing: "
-            + ", ".join(missing)
-        )
+        return None
+    if openbabel_spec is None or not openbabel_spec.origin:
+        return None
+    libs = (
+        Path(openbabel_spec.origin).resolve().parents[1] / "openbabel_wheel.libs"
+    )
+    return libs if libs.is_dir() else None
+
+
+def find_openbabel_plugin_dirs():
+    try:
+        openbabel_spec = importlib.util.find_spec("openbabel")
+    except Exception:
         return []
-    return found
+    if openbabel_spec is None or not openbabel_spec.origin:
+        return []
+    package_dir = Path(openbabel_spec.origin).resolve().parent
+    candidates = [
+        package_dir,
+        package_dir / "bin",
+        package_dir / "plugins",
+    ]
+    return [candidate for candidate in candidates if list(candidate.glob("*.obf"))]
 
 
 # meeko 0.7 imports prody at top level, prody imports Biopython, and Biopython's
@@ -144,6 +141,15 @@ for _package in (
     binaries += _binaries
     hiddenimports += _hidden
 
+if sys.platform.startswith("win"):
+    for _required_import in (
+        "rdkit",
+        "meeko",
+        "meeko.cli.mk_prepare_receptor",
+        "openbabel",
+    ):
+        require_build_import(_required_import)
+
 _obabel = find_build_obabel()
 if sys.platform.startswith("win") and _obabel is None:
     raise SystemExit("obabel.exe was not found; install openbabel-wheel before building.")
@@ -160,9 +166,8 @@ if _vina_cli is not None and not Path(_vina_cli).resolve().is_relative_to(
 ):
     binaries.append((_vina_cli, "tools/vina"))
 
-if sys.platform.startswith("win") and bundled_windows_gnina_exists():
-    datas.append(("tools/gnina", "tools/gnina"))
-    binaries += collect_windows_gnina_torch_dlls()
+if sys.platform.startswith("win"):
+    print("Skipping GNINA on Windows: VinaLab Windows builds ship Vina/Vinardo only.")
 else:
     print("Skipping PyInstaller GNINA bundle for this platform/build.")
 
@@ -180,6 +185,12 @@ if _openbabel_spec is not None and _openbabel_spec.origin:
     if os.path.isdir(_openbabel_libs):
         for _dll in glob.glob(os.path.join(_openbabel_libs, "*.dll")):
             binaries.append((_dll, "openbabel_wheel.libs"))
+
+if sys.platform.startswith("win"):
+    if find_openbabel_wheel_libs() is None:
+        raise SystemExit("openbabel_wheel.libs was not found; install openbabel-wheel before building.")
+    if not find_openbabel_plugin_dirs():
+        raise SystemExit("Open Babel .obf plugins were not found; install openbabel-wheel before building.")
 
 
 def _collect_msvc_runtime():
