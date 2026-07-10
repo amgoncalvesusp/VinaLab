@@ -1,0 +1,14 @@
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.venv/
+build*/
+dist*/
+release/
+tmp/
+vinalab.sqlite
+runs/
+charges
+wbo
+xtbrestart
+xtbtopo.mol
