@@ -17,7 +17,6 @@ import zipfile
 APP_NAME = "VinaLab"
 DEB_PACKAGE_NAME = "vinalab"
 LINUX_ARCH = "amd64"
-LINUX_GNINA_PATH = Path("tools/gnina/gnina")
 LINUX_DEB_DEPENDS = (
     "autodock-vina, openbabel, libc6, libstdc++6, libgcc-s1, zlib1g, libgl1, libegl1, "
     "libxkbcommon-x11-0, libxcb-cursor0, libxcb-icccm4, libxcb-image0, "
@@ -105,17 +104,11 @@ def package_unix(version: str, dist_dir: Path, output_dir: Path, target: str) ->
     if target == "linux":
         entries.append((Path("packaging/linux/vinalab.desktop"), "vinalab.desktop"))
         entries.append((Path("packaging/linux/run_vinalab.sh"), "run_vinalab.sh"))
-        gnina = optional_linux_gnina_path()
-        if gnina is not None:
-            entries.append((gnina, "tools/gnina/gnina"))
     with tarfile.open(archive, "w:gz") as handle:
         for source, arcname in entries:
             require_file(source)
             info = handle.gettarinfo(str(source), arcname=arcname)
-            if source == executable or arcname in {
-                "tools/gnina/gnina",
-                "run_vinalab.sh",
-            }:
+            if source == executable or arcname == "run_vinalab.sh":
                 info.mode = 0o755
             with source.open("rb") as file_handle:
                 handle.addfile(info, file_handle)
@@ -162,8 +155,6 @@ def prepare_linux_deb_tree(
     version: str,
     executable: Path,
     package_root: Path,
-    include_gnina: bool = True,
-    gnina_path: Path | None = None,
 ) -> None:
     """Create the Debian package filesystem tree without invoking dpkg-deb."""
     require_file(executable)
@@ -184,8 +175,6 @@ def prepare_linux_deb_tree(
     shutil.copy2(Path("LICENSE"), doc_dir / "copyright")
     shutil.copy2(Path("packaging/linux/vinalab.desktop"), apps_dir / "vinalab.desktop")
     shutil.copy2(Path("ui/icon.png"), icon_dir / "vinalab.png")
-    if include_gnina:
-        install_linux_gnina(app_dir, gnina_path)
 
     launcher = bin_dir / "vinalab"
     launcher.write_text(
@@ -214,8 +203,8 @@ def linux_deb_control(version: str, package_root: Path) -> str:
         "Maintainer: Adriano Marques Goncalves <adriano@example.invalid>\n"
         f"Installed-Size: {installed_size}\n"
         f"Depends: {depends}\n"
-        "Description: Desktop interface for AutoDock Vina and GNINA molecular docking\n"
-        " VinaLab helps prepare PDBQT inputs, run Vina or GNINA CNN docking jobs,\n"
+        "Description: Lightweight desktop interface for AutoDock Vina molecular docking\n"
+        " VinaLab Light helps prepare PDBQT inputs, run Vina/Vinardo docking jobs,\n"
         " inspect results, visualize poses, and generate reports.\n"
     )
 
@@ -228,30 +217,11 @@ export QTWEBENGINE_DISABLE_SANDBOX="${{QTWEBENGINE_DISABLE_SANDBOX:-1}}"
 if [ -z "${{QTWEBENGINE_CHROMIUM_FLAGS:-}}" ]; then
   export QTWEBENGINE_CHROMIUM_FLAGS="--single-process --no-sandbox --disable-gpu"
 fi
-export PATH="$APP_ROOT/tools/gnina:$APP_ROOT/tools/vina:$APP_ROOT/openbabel/bin:$APP_ROOT/openbabel:${{PATH:-}}"
-export LD_LIBRARY_PATH="$APP_ROOT:$APP_ROOT/tools/gnina:$APP_ROOT/tools/vina:$APP_ROOT/openbabel/lib:$APP_ROOT/openbabel/bin:$APP_ROOT/openbabel:${{LD_LIBRARY_PATH:-}}"
+export PATH="$APP_ROOT/tools/vina:$APP_ROOT/openbabel/bin:$APP_ROOT/openbabel:${{PATH:-}}"
+export LD_LIBRARY_PATH="$APP_ROOT:$APP_ROOT/tools/vina:$APP_ROOT/openbabel/lib:$APP_ROOT/openbabel/bin:$APP_ROOT/openbabel:${{LD_LIBRARY_PATH:-}}"
 cd "$APP_ROOT"
 exec "$APP_ROOT/VinaLab" "$@"
 """
-
-
-def optional_linux_gnina_path() -> Path | None:
-    """Return the optional bundled Linux GNINA CLI when available."""
-    if LINUX_GNINA_PATH.exists() and LINUX_GNINA_PATH.is_file():
-        return LINUX_GNINA_PATH
-    return None
-
-
-def install_linux_gnina(app_dir: Path, gnina_path: Path | None = None) -> None:
-    """Install the optional GNINA scoring executable beside the Linux app."""
-    source = gnina_path or optional_linux_gnina_path()
-    if source is None:
-        return
-    require_file(source)
-    destination = app_dir / "tools" / "gnina" / "gnina"
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(source, destination)
-    destination.chmod(0o755)
 
 
 def package_installed_size_kb(package_root: Path) -> int:

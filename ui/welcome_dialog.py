@@ -66,5 +66,5 @@ class WelcomeDialog(QDialog):
         self.setWindowTitle(I18n.get("welcome_title", lang))
         self.title_label.setText(I18n.get("welcome_title", lang))
         self.author_label.setText(I18n.get("author_label", lang))
-        self.body_label.setText(I18n.get("welcome_body", lang))
+        self.body_label.setText(I18n.get("welcome_light_body", lang))
         self.start_button.setText(I18n.get("get_started", lang))

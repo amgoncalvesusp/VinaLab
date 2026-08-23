@@ -20,6 +20,7 @@ class PackageReleaseTests(unittest.TestCase):
         self.assertNotIn("torch_cuda.dll", spec_text)
         self.assertNotIn("torch_cpu.dll", spec_text)
         self.assertNotIn("c10.dll", spec_text)
+        self.assertNotIn('("pontuacao", "pontuacao")', spec_text)
 
     def test_prepare_linux_deb_tree_installs_launcher_desktop_and_icon(self) -> None:
         """The Ubuntu installer tree should expose a runnable system command."""
@@ -29,7 +30,7 @@ class PackageReleaseTests(unittest.TestCase):
             executable.write_bytes(b"fake executable")
             package_root = tmp_path / "pkg"
 
-            prepare_linux_deb_tree("0.0.7", executable, package_root, include_gnina=False)
+            prepare_linux_deb_tree("0.0.7", executable, package_root)
 
             installed_app = package_root / "opt" / "vinalab" / "VinaLab"
             launcher = package_root / "usr" / "bin" / "vinalab"
@@ -58,7 +59,7 @@ class PackageReleaseTests(unittest.TestCase):
             self.assertIn('exec "$APP_ROOT/VinaLab"', launcher_text)
             self.assertIn("QTWEBENGINE_DISABLE_SANDBOX", launcher_text)
             self.assertIn("LD_LIBRARY_PATH", launcher_text)
-            self.assertIn("tools/gnina", launcher_text)
+            self.assertNotIn("tools/gnina", launcher_text)
 
             control_text = control.read_text(encoding="utf-8")
             self.assertTrue(control_text.startswith("Package: vinalab\n"))
@@ -70,27 +71,18 @@ class PackageReleaseTests(unittest.TestCase):
             self.assertIn("libxkbcommon-x11-0", control_text)
             self.assertIn("Depends: autodock-vina,\n openbabel,\n libc6,", control_text)
 
-    def test_prepare_linux_deb_tree_installs_gnina_when_provided(self) -> None:
-        """The Ubuntu installer should ship the Linux GNINA scoring executable."""
+    def test_prepare_linux_deb_tree_has_no_gnina_payload(self) -> None:
+        """VinaLab Light should not ship GNINA in the Ubuntu installer."""
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_path = Path(tmpdir)
             executable = tmp_path / "VinaLab"
             executable.write_bytes(b"fake executable")
-            gnina = tmp_path / "gnina"
-            gnina.write_bytes(b"fake gnina")
             package_root = tmp_path / "pkg"
 
-            prepare_linux_deb_tree(
-                "0.0.7",
-                executable,
-                package_root,
-                include_gnina=True,
-                gnina_path=gnina,
-            )
+            prepare_linux_deb_tree("0.0.7", executable, package_root)
 
-            installed_gnina = package_root / "opt" / "vinalab" / "tools" / "gnina" / "gnina"
-            self.assertTrue(installed_gnina.exists())
-            self.assertEqual(installed_gnina.read_bytes(), b"fake gnina")
+            installed_gnina = package_root / "opt" / "vinalab" / "tools" / "gnina"
+            self.assertFalse(installed_gnina.exists())
 
 
 if __name__ == "__main__":

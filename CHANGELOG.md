@@ -2,12 +2,14 @@
 
 ## 1.0.1 - 2026-07-07
 
-- Remove GNINA dos builds Windows; a UI Windows exibe apenas Vina/Vinardo/AD4 e pontuadores opcionais disponiveis.
-- Mantem GNINA apenas para Linux/WSL ou builds futuros com bundle nativo comprovadamente completo.
-- Garante que o fallback AutoDock Vina CLI rode com `native_tool_env`, igual aos outros binarios nativos.
-- Reforca a checagem de runtime empacotado para RDKit, Meeko, `meeko.cli.mk_prepare_receptor`, Open Babel, `obabel`, plugins `.obf`, `openbabel_wheel.libs` e Vina CLI.
-- Adiciona SMINA como backend opcional detectado em `tools/smina`, PATH ou Conda, sem bloquear builds Windows/Linux.
-- Adiciona testes de regressao para ausencia de GNINA/libtorch no spec Windows, ambiente do Vina CLI, runtime Open Babel e smoke tests opcionais de conversao/docking.
+- Reposiciona a aplicacao como VinaLab Light, uma GUI leve para AutoDock Vina.
+- Mantem apenas as funcoes nativas Vina e Vinardo na UI e no fluxo de docking.
+- Remove pontuadores externos, GNINA e SMINA dos caminhos de empacotamento Windows/Linux.
+- Mantem conversao PDBQT, analise de resultados, relatorios e abertura opcional no PyMOL.
+- Adiciona visualizador 3D da caixa de docking com receptor e wireframe atualizado pelos parametros da aba Docking.
+- Adiciona ligante de referencia/base para recentralizar e dimensionar a caixa com padding, calcular RMSD das poses contra a referencia e marcar validacao aprovado/reprovado.
+- Adiciona grafico score versus RMSD da referencia quando houver dados comparaveis.
+- Garante que o fallback AutoDock Vina CLI rode com `native_tool_env`.
 
 ## 1.0.0 - 2026-07-06
 

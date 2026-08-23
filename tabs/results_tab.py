@@ -77,6 +77,7 @@ from tabs.results_dialogs import (
 )
 from tabs.results_view import (
     apply_header_tooltips,
+    build_box_preview_html,
     build_pose_view_html,
     prepare_pose_view_files,
     safe_export_name,
@@ -132,6 +133,7 @@ class ResultsTab(QWidget):
         self.preview_status = QLabel()
         self.pose_detail_label = QLabel()
         self.preview_view = QWebEngineView() if QWebEngineView is not None else None
+        self.box_preview_view = QWebEngineView() if QWebEngineView is not None else None
         self.preview_tabs = QTabWidget()
         self.interaction_cutoff = QComboBox()
         self.interaction_table = QTableWidget(0, 7)
@@ -143,6 +145,7 @@ class ResultsTab(QWidget):
         self.current_receptor_pdb: Path | None = None
         self.current_pose_pdb: Path | None = None
         self.current_receptor_path: Path | None = None
+        self._box_preview_ready = False
         self.consensus_widget = QWidget()
         self.consensus_table = QTableWidget(0, 0)
         self.consensus_tab_index = -1
@@ -269,8 +272,12 @@ class ResultsTab(QWidget):
         self.preview_tabs.setTabText(0, I18n.get("results_table", lang))
         if self.preview_tabs.count() > 1:
             self.preview_tabs.setTabText(1, I18n.get("interactions", lang))
-        if self.preview_tabs.count() > 2 and self.preview_view is not None:
-            self.preview_tabs.setTabText(2, I18n.get("pose_3d_view", lang))
+        box_index = self._side_tab_index(self.box_preview_view)
+        if box_index >= 0:
+            self.preview_tabs.setTabText(box_index, I18n.get("box_3d_view", lang))
+        pose_index = self._side_tab_index(self.preview_view)
+        if pose_index >= 0:
+            self.preview_tabs.setTabText(pose_index, I18n.get("pose_3d_view", lang))
         consensus_index = self._side_tab_index(self.consensus_widget)
         if consensus_index >= 0:
             self.preview_tabs.setTabText(consensus_index, I18n.get("consensus", lang))
@@ -478,6 +485,10 @@ class ResultsTab(QWidget):
         self.preview_tabs.addTab(
             interaction_widget, I18n.get("interactions", self.lang)
         )
+        if self.box_preview_view is not None:
+            self.preview_tabs.addTab(
+                self.box_preview_view, I18n.get("box_3d_view", self.lang)
+            )
         if self.preview_view is not None:
             self.preview_tabs.addTab(
                 self.preview_view, I18n.get("pose_3d_view", self.lang)
@@ -507,6 +518,8 @@ class ResultsTab(QWidget):
             I18n.get("pose_rank", self.lang),
             I18n.get("docking_score", self.lang),
             *scoring_headers,
+            I18n.get("reference_rmsd", self.lang),
+            I18n.get("reference_validation", self.lang),
             I18n.get("rmsd_best_pose", self.lang),
             I18n.get("pinned", self.lang),
             I18n.get("notes", self.lang),
@@ -517,6 +530,8 @@ class ResultsTab(QWidget):
             "pose_rank",
             "docking_score",
             *[f"score::{header}" for header in scoring_headers],
+            "reference_rmsd",
+            "reference_validation",
             "rmsd_lb",
             "pinned",
             "notes",
@@ -561,6 +576,16 @@ class ResultsTab(QWidget):
                         Qt.DisplayRole,
                         float(value) if key != "pose_rank" else int(value),
                     )
+                if key == "reference_validation":
+                    validation_color = {
+                        "Pass": QColor("#d8f0df"),
+                        "Fail": QColor("#f6d6d6"),
+                        "Not comparable": QColor("#f3ebc6"),
+                    }.get(str(value))
+                    if validation_color is not None:
+                        item.setBackground(validation_color)
+                        self.table.setItem(row_index, column_index, item)
+                        continue
                 item.setBackground(background)
                 self.table.setItem(row_index, column_index, item)
         self._rendering_table = False
@@ -568,9 +593,18 @@ class ResultsTab(QWidget):
     def _update_chart(self) -> None:
         """Refresh the embedded affinity distribution bar chart."""
         self.figure.clear()
-        axis = self.figure.add_subplot(111)
         rows = self.filtered_results if self.filtered_results else self.results
         if rows:
+            reference_rows = [
+                row
+                for row in rows
+                if row.get("reference_rmsd") not in {"", None}
+            ]
+            axis = (
+                self.figure.add_subplot(121)
+                if reference_rows
+                else self.figure.add_subplot(111)
+            )
             labels = [
                 f"{row['ligand_name']} {row.get('scoring_function', row.get('scoring_key', ''))} #{row['mode']}"
                 for row in rows
@@ -581,6 +615,28 @@ class ResultsTab(QWidget):
             axis.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
             axis.set_ylabel(I18n.get("affinity_col", self.lang))
             axis.set_title(I18n.get("chart_title", self.lang))
+            if reference_rows:
+                scatter_axis = self.figure.add_subplot(122)
+                xs = [float(row["reference_rmsd"]) for row in reference_rows]
+                ys = [float(row["affinity"]) for row in reference_rows]
+                colors = [
+                    "#1f6b3a"
+                    if row.get("reference_validation") == "Pass"
+                    else "#9b1c1c"
+                    for row in reference_rows
+                ]
+                scatter_axis.scatter(xs, ys, c=colors, alpha=0.85)
+                cutoffs = [
+                    float(row.get("reference_rmsd_cutoff", 0.0) or 0.0)
+                    for row in reference_rows
+                ]
+                cutoff = max(cutoffs) if cutoffs else 0.0
+                if cutoff > 0:
+                    scatter_axis.axvline(cutoff, color="#8a5a00", linestyle="--")
+                scatter_axis.set_xlabel(I18n.get("reference_rmsd", self.lang))
+                scatter_axis.set_ylabel(I18n.get("affinity_col", self.lang))
+                scatter_axis.set_title(I18n.get("score_vs_reference_rmsd", self.lang))
+                self.figure.tight_layout()
         self.canvas.draw_idle()
         self.chart_path = Path(tempfile.gettempdir()) / "vinalab_affinity_chart.png"
         self.figure.savefig(self.chart_path, dpi=160, bbox_inches="tight")
@@ -612,6 +668,17 @@ class ResultsTab(QWidget):
                         "Mode #": row["mode"],
                         "Affinity (kcal/mol)": row["affinity"],
                         "Vina affinity (kcal/mol)": row.get("vina_affinity", ""),
+                        "Reference RMSD": row.get("reference_rmsd", ""),
+                        "Reference validation": row.get(
+                            "reference_validation", ""
+                        ),
+                        "Reference RMSD cutoff": row.get(
+                            "reference_rmsd_cutoff", ""
+                        ),
+                        "Reference RMSD status": row.get(
+                            "reference_rmsd_status", ""
+                        ),
+                        "Reference ligand": row.get("reference_ligand", ""),
                         "RMSD l.b.": row["rmsd_lb"],
                         "RMSD u.b.": row["rmsd_ub"],
                         "Scoring error": row.get("scoring_error", ""),
@@ -651,6 +718,8 @@ class ResultsTab(QWidget):
                 I18n.get("mode_col", self.lang),
                 I18n.get("affinity_col", self.lang),
                 "Vina affinity",
+                I18n.get("reference_rmsd", self.lang),
+                I18n.get("reference_validation", self.lang),
                 I18n.get("rmsd_lb_col", self.lang),
                 I18n.get("rmsd_ub_col", self.lang),
                 "Scoring error",
@@ -768,14 +837,33 @@ class ResultsTab(QWidget):
         ProtocolValidationDialog(rows, reference_path, top_n, self, self.lang).exec()
 
     def update_box_preview(self, box: dict) -> None:
-        """Store the current box parameters (viewer removed in v1.1)."""
+        """Store current box parameters and refresh the 3D box preview."""
         self.current_box = dict(box)
+        self._refresh_box_preview()
 
     def update_receptor_preview(self, receptor_path: "Path | None") -> None:
-        """Store the receptor path for PyMOL visualization."""
+        """Store the receptor path for PyMOL and box visualization."""
         self.current_receptor_path = (
             receptor_path if receptor_path and receptor_path.exists() else None
         )
+        self._refresh_box_preview()
+
+    def _refresh_box_preview(self) -> None:
+        """Render receptor plus docking box in the dedicated 3D preview tab."""
+        if self.box_preview_view is None:
+            return
+        try:
+            self.box_preview_view.setHtml(
+                build_box_preview_html(self.current_receptor_path, self.current_box)
+            )
+            self._box_preview_ready = True
+        except Exception as exc:  # noqa: BLE001 - preview is non-critical
+            self._box_preview_ready = False
+            self.box_preview_view.setHtml(
+                "<html><body style='background:#0b0d12;color:#f2dede;"
+                "font:14px Segoe UI,sans-serif;padding:16px'>"
+                f"Erro ao renderizar caixa de docking: {exc}</body></html>"
+            )
 
     def _selected_result_row(self) -> dict | None:
         """Return the stored result row matching the current table selection."""
@@ -1670,6 +1758,8 @@ class ResultsTab(QWidget):
             row.get("pose_rank", row.get("mode", "")),
             self._docking_score(row),
             *scoring_values,
+            row.get("reference_rmsd", ""),
+            row.get("reference_validation", ""),
             row.get("rmsd_lb", ""),
             self._row_pinned(row),
             self._row_note(row),
@@ -1819,6 +1909,11 @@ class ResultsTab(QWidget):
             return int(row.get("pose_rank", row.get("mode", 0)))
         if key == "rmsd_lb":
             return float(row.get("rmsd_lb", 999999.0))
+        if key == "reference_rmsd":
+            return float(row.get("reference_rmsd", 999999.0) or 999999.0)
+        if key == "reference_validation":
+            order = {"Pass": 0, "Fail": 1, "Not comparable": 2}
+            return order.get(str(row.get("reference_validation", "")), 3)
         if key == "pinned":
             return int(self._row_pinned(row))
         if key == "notes":
@@ -1964,9 +2059,12 @@ class ResultsTab(QWidget):
     @staticmethod
     def _numeric_column(key: str) -> bool:
         """Return True when a table column should sort as numeric."""
-        return key in {"pose_rank", "docking_score", "rmsd_lb"} or key.startswith(
-            "score::"
-        )
+        return key in {
+            "pose_rank",
+            "docking_score",
+            "rmsd_lb",
+            "reference_rmsd",
+        } or key.startswith("score::")
 
     @staticmethod
     def _range_spin(value: float) -> QDoubleSpinBox:

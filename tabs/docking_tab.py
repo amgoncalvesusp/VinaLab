@@ -1,19 +1,11 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Docking parameter tab and execution wiring.
 
-Scoring-function ranking based on benchmark literature (2021-2025):
-1. GNINA CNN ensemble: strongest overall virtual screening/redocking performance,
-   but requires a separate GNINA binary, typically Linux/WSL.
-2. Vinardo: empirical scoring optimized beyond Vina and strong CASF benchmark
-   performance.
-3. Vina: fast, standard, widely validated AutoDock Vina scoring.
-4. AutoDock4/ad4: force-field scoring for charged/metalloprotein cases and
-   affinity-map workflows.
+VinaLab Light keeps the docking surface focused on AutoDock Vina native scoring: Vina for the standard workflow and Vinardo for the bundled alternative.
 """
 
 import json
 from pathlib import Path
-import sys
 
 from PySide6.QtCore import Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
@@ -42,58 +34,20 @@ from PySide6.QtWidgets import (
 
 from core.docking_engine import (
     DockingWorker,
-    discover_external_scoring_functions,
     find_obabel_executable,
 )
 from core.environment_manager import EnvironmentManager
 from core.file_utils import is_pdbqt_file, pdbqt_coordinate_bounds, pdbqt_receptor_atoms
 from core.i18n import I18n
-from core.native_tools import find_gnina_executable, find_smina_executable
 from core.scrolling import ScrollManager
 
 
 SCORING_OPTIONS = [
     {
-        "key": "gnina",
-        "label_pt": "GNINA (CNN)",
-        "label_en": "GNINA (CNN)",
-        "desc_pt": "Melhor desempenho em triagem virtual (deep learning). Requer binário GNINA externo.",
-        "desc_en": "Best virtual screening performance (deep learning). Requires an external GNINA binary.",
-        "ref_url": "https://doi.org/10.1186/s13321-025-00973-x",
-        "ref_label": "McNutt et al., J. Cheminformatics 2025",
-        "available_check": "gnina_binary",
-        "vina_sf_name": None,
-        "stars": 4,
-    },
-    {
-        "key": "vinardo",
-        "label_pt": "Vinardo",
-        "label_en": "Vinardo",
-        "desc_pt": "Supera Vina em todos os benchmarks CASF. Recomendado para triagem virtual.",
-        "desc_en": "Outperforms Vina in all CASF benchmarks. Recommended for virtual screening.",
-        "ref_url": "https://doi.org/10.1371/journal.pone.0155183",
-        "ref_label": "Quiroga & Villarreal, PLoS ONE 2016",
-        "available_check": "always",
-        "vina_sf_name": "vinardo",
-        "stars": 3,
-    },
-    {
-        "key": "smina",
-        "label_pt": "SMINA",
-        "label_en": "SMINA",
-        "desc_pt": "Fork do AutoDock Vina para docking, minimização e desenvolvimento de scoring functions. Opcional no Windows/Linux.",
-        "desc_en": "AutoDock Vina fork for docking, minimization, and scoring-function development. Optional on Windows/Linux.",
-        "ref_url": "https://sourceforge.net/projects/smina/",
-        "ref_label": "smina SourceForge",
-        "available_check": "smina_binary",
-        "vina_sf_name": None,
-        "stars": 2,
-    },
-    {
         "key": "vina",
-        "label_pt": "Vina (padrão)",
+        "label_pt": "Vina (padrao)",
         "label_en": "Vina (standard)",
-        "desc_pt": "Função padrão. Rápida e amplamente validada.",
+        "desc_pt": "Funcao padrao. Rapida e amplamente validada.",
         "desc_en": "Standard function. Fast and widely validated.",
         "ref_url": "https://doi.org/10.1002/jcc.21334",
         "ref_label": "Trott & Olson, J. Comput. Chem. 2010",
@@ -102,19 +56,18 @@ SCORING_OPTIONS = [
         "stars": 2,
     },
     {
-        "key": "ad4",
-        "label_pt": "AutoDock4 (ad4)",
-        "label_en": "AutoDock4 (ad4)",
-        "desc_pt": "Campo de força clássico. Melhor para metaloproteínas. Requer mapas de afinidade (AutoGrid4).",
-        "desc_en": "Classic force field. Best for metalloproteins. Requires affinity maps (AutoGrid4).",
-        "ref_url": "https://doi.org/10.1021/acs.jcim.1c00203",
-        "ref_label": "Eberhardt et al., J. Chem. Inf. Model. 2021",
+        "key": "vinardo",
+        "label_pt": "Vinardo",
+        "label_en": "Vinardo",
+        "desc_pt": "Funcao nativa do AutoDock Vina 1.2.x; alternativa leve para triagem e redocking.",
+        "desc_en": "Native AutoDock Vina 1.2.x function; lightweight alternative for screening and redocking.",
+        "ref_url": "https://doi.org/10.1371/journal.pone.0155183",
+        "ref_label": "Quiroga & Villarreal, PLoS ONE 2016",
         "available_check": "always",
-        "vina_sf_name": "ad4",
-        "stars": 1,
+        "vina_sf_name": "vinardo",
+        "stars": 3,
     },
 ]
-
 MAX_STARS = 4
 
 
@@ -271,78 +224,17 @@ class ScoringFunctionSelector(QGroupBox):
         )
 
     def _external_options(self) -> list[dict]:
-        """Build options for pontuacao/ scoring bundles."""
-        available = {
-            item["key"]: item for item in discover_external_scoring_functions()
-        }
-        definitions = [
-            {
-                "key": "rtmscore",
-                "label_pt": "RTMScore",
-                "label_en": "RTMScore",
-                "desc_pt": "Graph Transformer; forte em CASF-2016 para pose e triagem. Requer torch/dgl/MDAnalysis.",
-                "desc_en": "Graph Transformer; strong CASF-2016 pose and screening performance. Requires torch/dgl/MDAnalysis.",
-                "ref_url": "https://pubs.acs.org/doi/10.1021/acs.jmedchem.2c00991",
-                "ref_label": "RTMScore, J. Med. Chem. 2022",
-                "available_check": "archive",
-                "vina_sf_name": "vina",
-            },
-            {
-                "key": "delta_vina_xgb",
-                "label_pt": "DeltaVinaXGB-Light",
-                "label_en": "DeltaVinaXGB-Light",
-                "desc_pt": "XGBoost sobre componentes do Vina; recomendado para validacao cruzada em CASF-2016.",
-                "desc_en": "XGBoost over Vina components; recommended for CASF-2016 cross-validation.",
-                "ref_url": "https://www.mdpi.com/1420-3049/27/14/4568/xml",
-                "ref_label": "ML-era docking review, Molecules 2022",
-                "available_check": "archive",
-                "vina_sf_name": "vina",
-            },
-            {
-                "key": "deltavina_rf20",
-                "label_pt": "DeltaVinaRF20",
-                "label_en": "DeltaVinaRF20",
-                "desc_pt": "Random Forest que corrige Vina; historicamente forte em CASF-2013/2007, mas requer Python 2/R.",
-                "desc_en": "Random Forest correction to Vina; historically strong on CASF-2013/2007, but requires Python 2/R.",
-                "ref_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC5140681/",
-                "ref_label": "DeltaVinaRF20, J. Comput. Chem. 2016",
-                "available_check": "archive",
-                "vina_sf_name": "vina",
-            },
-        ]
-        for option in definitions:
-            option["archive_available"] = option["key"] in available
-        manager = EnvironmentManager(Path(__file__).resolve().parents[1])
-        cached_report = manager.cached_status_report()
-        statuses = (
-            cached_report.get("scoring_functions")
-            or manager.scoring_function_statuses()
-        )
-        for option in definitions:
-            status = statuses.get(option["key"], {})
-            option["dependency_available"] = bool(status.get("available", False))
-            option["unavailable_reason"] = status.get("reason", "")
-            option["missing_imports"] = status.get("missing_imports", [])
-        return definitions
+        """Return external scoring options.
+
+        VinaLab Light does not expose bundled ML rescoring archives.
+        """
+        return []
 
     def _ranked_options(self) -> list[dict]:
         """Return scoring options ordered by literature-based recommendation."""
-        native = {
-            option["key"]: option
-            for option in SCORING_OPTIONS
-            if not (sys.platform.startswith("win") and option["key"] == "gnina")
-        }
+        native = {option["key"]: option for option in SCORING_OPTIONS}
         external = {option["key"]: option for option in self._external_options()}
-        order = [
-            "rtmscore",
-            "gnina",
-            "delta_vina_xgb",
-            "deltavina_rf20",
-            "vinardo",
-            "smina",
-            "vina",
-            "ad4",
-        ]
+        order = ["vina", "vinardo"]
         merged = {**native, **external}
         return [merged[key] for key in order if key in merged]
 
@@ -362,10 +254,6 @@ class ScoringFunctionSelector(QGroupBox):
 
     def unavailable_reason(self, option: dict, lang: str) -> str:
         """Return a user-facing reason when a scoring option is unavailable."""
-        if option["available_check"] == "gnina_binary" and _gnina_executable() is None:
-            return I18n.get("scoring_gnina_warn", lang)
-        if option["available_check"] == "smina_binary" and _smina_executable() is None:
-            return I18n.get("scoring_smina_warn", lang)
         if option["available_check"] == "archive" and not option.get(
             "archive_available", False
         ):
@@ -409,6 +297,10 @@ class DockingTab(QWidget):
         self.snap_atom_button = QPushButton()
         self.snap_ligand_button = QPushButton()
         self.blind_dock_button = QPushButton()
+        self.reference_ligand_edit = QLineEdit()
+        self.reference_ligand_button = QPushButton()
+        self.reference_padding = self._double_spin(0, 30, 0.5, 1, 6.0)
+        self.reference_rmsd_cutoff = self._double_spin(0, 20, 0.1, 2, 2.0)
         self.save_box_button = QPushButton()
         self.load_box_button = QPushButton()
         self.box_presets_path = (
@@ -447,6 +339,9 @@ class DockingTab(QWidget):
                 "scoring_label",
                 "center_label",
                 "size_label",
+                "reference_ligand",
+                "reference_padding",
+                "reference_rmsd_cutoff",
                 "exhaustiveness",
                 "num_modes",
                 "energy_range",
@@ -482,6 +377,9 @@ class DockingTab(QWidget):
             "size_x": self.size_x.value(),
             "size_y": self.size_y.value(),
             "size_z": self.size_z.value(),
+            "reference_ligand": self.reference_ligand_edit.text().strip(),
+            "reference_padding": self.reference_padding.value(),
+            "reference_rmsd_cutoff": self.reference_rmsd_cutoff.value(),
             "exhaustiveness": self.exhaustiveness.value(),
             "num_modes": self.num_modes.value(),
             "energy_range": self.energy_range.value(),
@@ -510,6 +408,9 @@ class DockingTab(QWidget):
             f"size_x = {params['size_x']:.1f}",
             f"size_y = {params['size_y']:.1f}",
             f"size_z = {params['size_z']:.1f}",
+            f"reference_ligand = {params['reference_ligand']}",
+            f"reference_padding = {params['reference_padding']:.1f}",
+            f"reference_rmsd_cutoff = {params['reference_rmsd_cutoff']:.2f}",
             f"exhaustiveness = {params['exhaustiveness']}",
             f"num_modes = {params['num_modes']}",
             f"energy_range = {params['energy_range']:.1f}",
@@ -694,6 +595,7 @@ class DockingTab(QWidget):
         self.reload_atoms_button.setText(I18n.get("load_receptor_atoms", lang))
         self.snap_atom_button.setText(I18n.get("snap_selected_atom", lang))
         self.snap_ligand_button.setText(I18n.get("snap_crystal_ligand", lang))
+        self.reference_ligand_button.setText(I18n.get("reference_ligand_button", lang))
         self.blind_dock_button.setText(I18n.get("blind_dock", lang))
         self.blind_dock_button.setToolTip(I18n.get("tip_blind_dock", lang))
         self.save_box_button.setText(I18n.get("save_box", lang))
@@ -707,6 +609,14 @@ class DockingTab(QWidget):
         self.auto_grid_button.setToolTip(I18n.get("tip_center", lang))
         self.snap_atom_button.setToolTip(I18n.get("tip_snap_atom", lang))
         self.snap_ligand_button.setToolTip(I18n.get("tip_snap_ligand", lang))
+        self.reference_ligand_edit.setToolTip(I18n.get("tip_reference_ligand", lang))
+        self.reference_ligand_button.setToolTip(
+            I18n.get("tip_reference_ligand", lang)
+        )
+        self.reference_padding.setToolTip(I18n.get("tip_reference_padding", lang))
+        self.reference_rmsd_cutoff.setToolTip(
+            I18n.get("tip_reference_rmsd_cutoff", lang)
+        )
         self.save_box_button.setToolTip(I18n.get("tip_save_box", lang))
         self.load_box_button.setText(I18n.get("load_box_preset", lang))
         self.load_box_button.setToolTip(I18n.get("tip_load_box", lang))
@@ -732,6 +642,7 @@ class DockingTab(QWidget):
         content = QWidget()
         layout = QVBoxLayout(content)
         self.output_edit.setReadOnly(True)
+        self.reference_ligand_edit.setReadOnly(True)
         layout.addWidget(self.scoring_selector)
 
         search_form = QFormLayout(self.search_group)
@@ -750,6 +661,10 @@ class DockingTab(QWidget):
         search_form.addRow(self.auto_grid_button)
         search_form.addRow(self._box_snap_row())
         search_form.addRow(
+            self.labels["reference_ligand"], self._reference_ligand_row()
+        )
+        search_form.addRow(self.labels["reference_padding"], self.reference_padding)
+        search_form.addRow(
             I18n.get("dt_box_presets_label", self.lang), self._box_preset_row()
         )
         search_form.addRow(self._build_atom_center_group())
@@ -763,6 +678,9 @@ class DockingTab(QWidget):
         form.addRow(self.labels["cpu_label"], self.cpu)
         form.addRow(self.labels["seed_label"], self._seed_row())
         form.addRow(self.labels["min_rmsd"], self.min_rmsd)
+        form.addRow(
+            self.labels["reference_rmsd_cutoff"], self.reference_rmsd_cutoff
+        )
         layout.addWidget(self.parameter_group)
         layout.addWidget(self._separator())
 
@@ -826,6 +744,14 @@ class DockingTab(QWidget):
         row.addWidget(self.snap_atom_button)
         row.addWidget(self.snap_ligand_button)
         row.addWidget(self.blind_dock_button)
+        return row
+
+    def _reference_ligand_row(self) -> QHBoxLayout:
+        """Create reference ligand selection controls."""
+        self.reference_ligand_button.clicked.connect(self._pick_reference_ligand)
+        row = QHBoxLayout()
+        row.addWidget(self.reference_ligand_edit, stretch=1)
+        row.addWidget(self.reference_ligand_button)
         return row
 
     def _apply_blind_docking_box(self) -> None:
@@ -905,6 +831,8 @@ class DockingTab(QWidget):
             self.seed,
             self.fix_seed,
             self.min_rmsd,
+            self.reference_padding,
+            self.reference_rmsd_cutoff,
         ]
         for widget in widgets:
             signal = (
@@ -1045,7 +973,23 @@ class DockingTab(QWidget):
         )
         if not file_name:
             return
-        bounds = pdbqt_coordinate_bounds([Path(file_name)])
+        self._set_reference_ligand(Path(file_name), center_box=True)
+
+    def _pick_reference_ligand(self) -> None:
+        """Choose a reference/base ligand for docking-center and RMSD validation."""
+        file_name, _ = QFileDialog.getOpenFileName(
+            self,
+            I18n.get("dt_ref_ligand_title", self.lang),
+            "",
+            f"{I18n.get('pdbqt_filter', self.lang)};;{I18n.get('all_files', self.lang)}",
+        )
+        if not file_name:
+            return
+        self._set_reference_ligand(Path(file_name), center_box=True)
+
+    def _set_reference_ligand(self, ligand_path: Path, center_box: bool) -> None:
+        """Store a reference ligand and optionally move the box to its centroid."""
+        bounds = pdbqt_coordinate_bounds([ligand_path])
         if bounds is None:
             QMessageBox.warning(
                 self,
@@ -1053,8 +997,24 @@ class DockingTab(QWidget):
                 I18n.get("dt_ligand_coords_fail", self.lang),
             )
             return
+        self.reference_ligand_edit.setText(str(ligand_path))
+        if not center_box:
+            self.parameters_changed.emit(self.current_parameters())
+            self._refresh_pre_run_checklist()
+            return
         center = tuple((axis_bounds[0] + axis_bounds[1]) / 2 for axis_bounds in bounds)
         self._set_center_from_xyz(center[0], center[1], center[2])
+        padding = float(self.reference_padding.value())
+        sizes = tuple(
+            min(126.0, max(1.0, (axis_bounds[1] - axis_bounds[0]) + 2.0 * padding))
+            for axis_bounds in bounds
+        )
+        self.size_x.setValue(sizes[0])
+        self.size_y.setValue(sizes[1])
+        self.size_z.setValue(sizes[2])
+        self.parameters_changed.emit(self.current_parameters())
+        self.box_changed.emit(self.current_box())
+        self._refresh_pre_run_checklist()
 
     def _set_center_from_xyz(self, x: float, y: float, z: float) -> None:
         """Update center spin boxes and emit box preview signal."""
@@ -1246,7 +1206,7 @@ class DockingTab(QWidget):
         for scoring_key in self.scoring_selector.selected_keys():
             option = self.scoring_selector.option_for_key(scoring_key)
             label = option["label_en"] if option else scoring_key
-            if scoring_key in {"vina", "vinardo", "ad4", "gnina", "smina"}:
+            if scoring_key in {"vina", "vinardo"}:
                 unavailable = (
                     self.scoring_selector.unavailable_reason(option, self.lang)
                     if option
@@ -1439,11 +1399,7 @@ class DockingTab(QWidget):
             for package in report.get("packages", [])
             if package.get("required", True) and not package.get("installed", False)
         ]
-        disabled_scorers = [
-            status.get("label", key)
-            for key, status in report.get("scoring_functions", {}).items()
-            if not status.get("available", False)
-        ]
+        disabled_scorers: list[str] = []
         if (
             not report.get("venv_ready")
             or missing_required
@@ -1499,6 +1455,8 @@ class DockingTab(QWidget):
             "size_z": self.size_z,
             "energy_range": self.energy_range,
             "min_rmsd": self.min_rmsd,
+            "reference_padding": self.reference_padding,
+            "reference_rmsd_cutoff": self.reference_rmsd_cutoff,
         }.items():
             if key in values:
                 widget.setValue(float(values[key]))
@@ -1515,6 +1473,8 @@ class DockingTab(QWidget):
         if "out" in values and values["out"]:
             self.output_edit.setText(str(Path(values["out"])))
             self.output_directory_changed.emit(Path(values["out"]))
+        if "reference_ligand" in values and values["reference_ligand"]:
+            self.reference_ligand_edit.setText(str(Path(values["reference_ligand"])))
         self.parameters_changed.emit(self.current_parameters())
 
     def _pick_output_directory(self) -> None:
@@ -1582,7 +1542,6 @@ class DockingTab(QWidget):
         spin.setDecimals(decimals)
         spin.setValue(value)
         return spin
-
     @staticmethod
     def _spin(minimum: int, maximum: int, value: int) -> QSpinBox:
         """Create a configured QSpinBox."""
@@ -1590,13 +1549,3 @@ class DockingTab(QWidget):
         spin.setRange(minimum, maximum)
         spin.setValue(value)
         return spin
-
-
-def _gnina_executable() -> Path | None:
-    """Return a GNINA executable from PATH or the local tools directory."""
-    return find_gnina_executable()
-
-
-def _smina_executable() -> Path | None:
-    """Return a smina executable from PATH or the local tools directory."""
-    return find_smina_executable()

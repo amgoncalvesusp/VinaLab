@@ -38,8 +38,6 @@ datas = [
     ("tabs", "tabs"),
     ("ui", "ui"),
     ("config", "config"),
-    ("tools/vina", "tools/vina"),
-    ("pontuacao", "pontuacao"),
     ("VERSION", "."),
     ("README.md", "."),
 ]
@@ -172,15 +170,10 @@ if sys.platform.startswith("linux") and _vina_cli is None:
     raise SystemExit(
         "vina was not found; install the Vina Python package or AutoDock Vina CLI before building."
     )
-if _vina_cli is not None and not Path(_vina_cli).resolve().is_relative_to(
-    (Path("tools") / "vina").resolve()
-):
+if _vina_cli is not None:
     binaries.append((_vina_cli, "tools/vina"))
 
-if sys.platform.startswith("win"):
-    print("Skipping GNINA on Windows: VinaLab Windows builds ship Vina/Vinardo only.")
-else:
-    print("Skipping PyInstaller GNINA bundle for this platform/build.")
+print("VinaLab Light build: shipping Vina/Vinardo only.")
 
 # openbabel-wheel keeps its private shared libraries in a sibling
 # "openbabel_wheel.libs" directory (the delvewheel layout) that collect_all does

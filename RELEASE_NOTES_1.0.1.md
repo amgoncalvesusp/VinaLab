@@ -1,35 +1,31 @@
-# VinaLab 1.0.1
+# VinaLab Light 1.0.1
 
-## English
+VinaLab Light 1.0.1 is the latest stable release and focuses on a compact, reliable AutoDock Vina workflow for Windows and Ubuntu Linux.
 
-### Windows packaging
+## Included
 
-- GNINA is not included in Windows builds anymore.
-- The Windows scoring selector hides GNINA instead of showing it disabled.
-- Windows builds no longer collect `c10.dll`, `torch_cpu.dll`, or `torch_cuda.dll`.
-- GNINA remains a Linux/WSL path until a complete native Windows bundle is validated.
-- SMINA is available as an optional backend when `smina`/`smina.exe` is found in `tools/smina`, PATH, or Conda. It is not required by the installer.
+- Native AutoDock Vina scoring functions: Vina and Vinardo.
+- Bundled AutoDock Vina CLI fallback for frozen Windows and Linux builds.
+- PDB, MOL2, and SDF conversion to PDBQT for receptors and ligands.
+- Runtime validation for RDKit, Meeko, Open Babel, Open Babel data, and plugins during release checks.
+- Docking-box editor and 3D preview showing the receptor and search volume.
+- Reference/base ligand selection to center the docking box and fit its size with configurable padding.
+- Reference-ligand RMSD comparison for generated poses, including a configurable pass/fail cutoff.
+- Pose result tables, affinity and RMSD plots, interaction analysis, RMSD clustering, consensus views, and report export.
+- Optional PyMOL handoff when PyMOL is available on the system PATH.
+- In-app quick-start guidance for conversion, box setup, docking, and result review.
 
-### Docking and conversion
+## Light edition scope
 
-- Vina and Vinardo remain the primary native scoring functions on Windows.
-- The bundled AutoDock Vina CLI fallback now runs with `native_tool_env`.
-- Runtime checks now require RDKit, Meeko, `meeko.cli.mk_prepare_receptor`, Open Babel, `obabel`, Open Babel `.obf` plugins, `openbabel_wheel.libs`, and the Vina CLI.
-- Added regression and optional smoke tests for conversion, Vina CLI docking, and Windows release contents.
+GNINA, CNN/neural scoring, and SMINA are not part of this release or its installers. The Light edition exposes only the native AutoDock Vina scoring functions.
 
-## Portugues
+## Packages
 
-### Empacotamento Windows
+- Windows x64 setup installer and portable package.
+- Ubuntu x64 Debian installer.
+- Linux x64 portable archive.
+- SHA-256 checksum files for the release artifacts.
 
-- GNINA nao e mais incluido nos builds Windows.
-- O seletor de pontuacao no Windows oculta GNINA em vez de exibir a opcao desabilitada.
-- Builds Windows nao coletam mais `c10.dll`, `torch_cpu.dll` ou `torch_cuda.dll`.
-- GNINA fica reservado para Linux/WSL ate existir um bundle Windows nativo completo e validado.
-- SMINA fica disponivel como backend opcional quando `smina`/`smina.exe` for encontrado em `tools/smina`, PATH ou Conda. Ele nao e requisito do instalador.
+## Validation
 
-### Docking e conversao
-
-- Vina e Vinardo continuam como funcoes nativas principais no Windows.
-- O fallback AutoDock Vina CLI incluido agora roda com `native_tool_env`.
-- A checagem de runtime agora exige RDKit, Meeko, `meeko.cli.mk_prepare_receptor`, Open Babel, `obabel`, plugins `.obf`, `openbabel_wheel.libs` e Vina CLI.
-- Foram adicionados testes de regressao e smoke tests opcionais para conversao, docking pelo Vina CLI e conteudo do release Windows.
+The release was checked with the conversion, Vina CLI docking, runtime dependency, packaging, and release consistency test suites on Windows and Linux.

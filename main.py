@@ -81,7 +81,7 @@ def main() -> int:
         QCoreApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
 
         app = QApplication(sys.argv)
-        app.setApplicationName("VinaLab")
+        app.setApplicationName("VinaLab Light")
         app.setStartDragTime(500)
         app.setFont(QFont("Segoe UI", 9))
 

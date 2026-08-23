@@ -1,7 +1,7 @@
 {
   "scoring_function": "rtmscore",
-  "language": "pt",
-  "screen_profile": "ultrawide",
+  "language": "en",
+  "screen_profile": "standard",
   "first_run": false,
   "scoring_functions": [
     "rtmscore",

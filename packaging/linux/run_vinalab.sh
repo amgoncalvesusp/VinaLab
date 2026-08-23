@@ -9,8 +9,8 @@ if [ -x "$SCRIPT_DIR/VinaLab" ]; then
   if [ -z "${QTWEBENGINE_CHROMIUM_FLAGS:-}" ]; then
     export QTWEBENGINE_CHROMIUM_FLAGS="--single-process --no-sandbox --disable-gpu"
   fi
-  export PATH="$APP_ROOT/tools/gnina:$APP_ROOT/tools/vina:$APP_ROOT/openbabel/bin:$APP_ROOT/openbabel:${PATH:-}"
-  export LD_LIBRARY_PATH="$APP_ROOT:$APP_ROOT/tools/gnina:$APP_ROOT/tools/vina:$APP_ROOT/openbabel/lib:$APP_ROOT/openbabel/bin:$APP_ROOT/openbabel:${LD_LIBRARY_PATH:-}"
+  export PATH="$APP_ROOT/tools/vina:$APP_ROOT/openbabel/bin:$APP_ROOT/openbabel:${PATH:-}"
+  export LD_LIBRARY_PATH="$APP_ROOT:$APP_ROOT/tools/vina:$APP_ROOT/openbabel/lib:$APP_ROOT/openbabel/bin:$APP_ROOT/openbabel:${LD_LIBRARY_PATH:-}"
   cd "$APP_ROOT"
   exec "$APP_ROOT/VinaLab" "$@"
 fi

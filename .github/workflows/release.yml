@@ -69,16 +69,6 @@ jobs:
             openbabel \
             patchelf
 
-      - name: Download Linux GNINA scoring binary
-        if: runner.os == 'Linux'
-        run: |
-          mkdir -p tools/gnina
-          curl -L --fail --retry 5 \
-            -o tools/gnina/gnina \
-            https://github.com/gnina/gnina/releases/download/v1.0/gnina
-          chmod +x tools/gnina/gnina
-          test -s tools/gnina/gnina
-
       - name: Install Python build dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel
@@ -139,12 +129,10 @@ jobs:
           test -f "$tarball"
           dpkg-deb --info "$deb"
           dpkg-deb --contents "$deb" | grep -E '/opt/vinalab/VinaLab$'
-          dpkg-deb --contents "$deb" | grep -E '/opt/vinalab/tools/gnina/gnina$'
           dpkg-deb --contents "$deb" | grep -E '/usr/bin/vinalab$'
           dpkg-deb --contents "$deb" | grep -E '/usr/share/applications/vinalab.desktop$'
           dpkg-deb --contents "$deb" | grep -E '/usr/share/icons/hicolor/256x256/apps/vinalab.png$'
           tar -tzf "$tarball" | grep -E '^VinaLab$'
-          tar -tzf "$tarball" | grep -E '^tools/gnina/gnina$'
           desktop-file-validate packaging/linux/vinalab.desktop
 
       - name: Upload artifact

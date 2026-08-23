@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Threaded AutoDock Vina docking engine for VinaLab."""
 
 import csv
@@ -27,11 +27,10 @@ from core.file_utils import (
 )
 from core.native_tools import (
     find_obabel_executable as find_obabel_path,
-    find_gnina_executable,
-    find_smina_executable,
     find_vina_executable,
     native_tool_env,
 )
+from core.rmsd import symmetry_corrected_rmsd
 
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0
 
@@ -70,27 +69,11 @@ except (
     Vina = None
 
 
-EXTERNAL_SCORING_ARCHIVES = {
-    "deltavina_rf20": {
-        "label": "DeltaVinaRF20",
-        "archive": "deltavina-master.zip",
-    },
-    "delta_vina_xgb": {
-        "label": "DeltaVinaXGB-Light",
-        "archive": "deltaVinaXGB-Light.zip",
-    },
-    "rtmscore": {
-        "label": "RTMScore",
-        "archive": "RTMScore-main.zip",
-    },
-}
+EXTERNAL_SCORING_ARCHIVES = {}
 
 VINA_SCORING_NAMES = {
     "vina": ("Vina", "vina"),
     "vinardo": ("Vinardo", "vinardo"),
-    "ad4": ("AutoDock4 (ad4)", "ad4"),
-    "gnina": ("GNINA (CNN)", None),
-    "smina": ("SMINA", None),
 }
 
 
@@ -100,20 +83,13 @@ def pontuacao_directory() -> Path:
 
 
 def discover_external_scoring_functions() -> list[dict]:
-    """Return available external scoring function archives found in pontuacao/."""
-    base_dir = pontuacao_directory()
-    discovered: list[dict] = []
-    for key, config in EXTERNAL_SCORING_ARCHIVES.items():
-        archive_path = base_dir / config["archive"]
-        if archive_path.exists():
-            discovered.append(
-                {
-                    "key": key,
-                    "label": config["label"],
-                    "archive_path": archive_path,
-                }
-            )
-    return discovered
+    """Return bundled rescoring archives.
+
+    VinaLab Light intentionally ships only AutoDock Vina native scoring
+    functions. Keeping this helper as an empty compatibility surface avoids
+    stale optional ML scorers leaking back into the UI.
+    """
+    return []
 
 
 def extract_pose_model(output_file: Path, mode: int, include_model: bool = True) -> str:
@@ -220,30 +196,9 @@ class DockingWorker(QThread):
 
     def run(self) -> None:
         """Execute all docking jobs and emit incremental results."""
-        gnina_cli = self._gnina_cli_path()
-        smina_cli = self._smina_cli_path()
         selected_scoring = self._selected_scoring_functions()
-        if "gnina" in selected_scoring and gnina_cli is None:
-            if sys.platform.startswith("win"):
-                self.error_signal.emit(
-                    "GNINA não está disponível na versão Windows; use Linux/WSL se precisar da pontuação CNN."
-                )
-            else:
-                self.error_signal.emit(
-                    "GNINA not found. Put gnina in tools/gnina, add gnina to PATH, or select another scoring function."
-                )
-            return
-        if "smina" in selected_scoring and smina_cli is None:
-            self.error_signal.emit(
-                "SMINA não foi encontrado. Instale smina e adicione ao PATH/Conda, ou coloque o executável em tools/smina."
-            )
-            return
         vina_cli = self._vina_cli_path()
-        if (
-            any(scoring_key not in {"gnina", "smina"} for scoring_key in selected_scoring)
-            and Vina is None
-            and vina_cli is None
-        ):
+        if Vina is None and vina_cli is None:
             self.error_signal.emit(
                 "O pacote Python vina não está instalado e nenhum fallback Vina CLI incluído foi encontrado."
             )
@@ -263,6 +218,7 @@ class DockingWorker(QThread):
 
         try:
             self._prepare_pdbqt_inputs()
+            self._reference_ligand_text = self._load_reference_ligand_text()
         except Exception as exc:  # noqa: BLE001 - input preparation errors must be shown in the GUI
             self.error_signal.emit(
                 f"Não foi possível preparar as entradas PDBQT: {exc}"
@@ -284,7 +240,7 @@ class DockingWorker(QThread):
                     if grid_warning:
                         self.log_signal.emit(f"AVISO {grid_warning}")
                     ligand_results = self._run_ligand_with_scoring(
-                        ligand_path, scoring_key, gnina_cli, smina_cli, vina_cli
+                        ligand_path, scoring_key, vina_cli
                     )
                     all_results.extend(ligand_results)
                     self.result_signal.emit(ligand_results)
@@ -306,18 +262,18 @@ class DockingWorker(QThread):
         )
 
     def _selected_scoring_functions(self) -> list[str]:
-        """Return scoring functions requested by the GUI."""
+        """Return the requested AutoDock Vina native scoring functions."""
         selected = list(self.parameters.get("scoring_functions") or [])
         if not selected:
             selected = [self.parameters.get("scoring_function", "vina")]
-        return selected
+        selected = [str(key).lower() for key in selected]
+        light_selected = [key for key in selected if key in VINA_SCORING_NAMES]
+        return light_selected or ["vina"]
 
     def _run_ligand_with_scoring(
         self,
         ligand_path: Path,
         scoring_key: str,
-        gnina_cli: Path | None,
-        smina_cli: Path | None,
         vina_cli: Path | None,
     ) -> list[dict]:
         """Dock or score one ligand with one selected scoring function."""
@@ -332,38 +288,17 @@ class DockingWorker(QThread):
             "vina_sf_name": vina_sf_name,
         }
         try:
-            if scoring_key == "gnina":
-                if gnina_cli is None:
-                    raise RuntimeError("O executável GNINA não está disponível.")
-                rows = self._dock_single_ligand_gnina(ligand_path, gnina_cli)
-            elif scoring_key == "smina":
-                if smina_cli is None:
-                    raise RuntimeError("O executável SMINA não está disponível.")
-                rows = self._dock_single_ligand_smina(ligand_path, smina_cli)
-            elif scoring_key in VINA_SCORING_NAMES:
+            if scoring_key in VINA_SCORING_NAMES:
                 rows = (
                     self._dock_single_ligand(ligand_path)
                     if Vina is not None
                     else self._dock_single_ligand_cli(ligand_path, vina_cli)
                 )
             else:
-                rows = (
-                    self._dock_single_ligand(ligand_path)
-                    if Vina is not None
-                    else self._dock_single_ligand_cli(ligand_path, vina_cli)
+                raise RuntimeError(
+                    f"VinaLab Light suporta apenas Vina e Vinardo; '{scoring_key}' foi ignorado."
                 )
-                try:
-                    self._run_external_scoring(scoring_key, rows)
-                except Exception as exc:  # noqa: BLE001 - keep docked poses visible even when rescoring dependencies fail
-                    message = f"{type(exc).__name__}: {exc}"
-                    self.log_signal.emit(
-                        f"ERRO ao pontuar poses geradas com {label}: {message}"
-                    )
-                    self.log_signal.emit(traceback.format_exc())
-                    for row in rows:
-                        row["vina_affinity"] = row["affinity"]
-                        row["external_score"] = ""
-                        row["scoring_error"] = message
+            self._annotate_reference_rmsd(rows)
             for row in rows:
                 row["scoring_function"] = label
                 row["scoring_key"] = scoring_key
@@ -373,6 +308,52 @@ class DockingWorker(QThread):
             return rows
         finally:
             self.parameters = previous_parameters
+
+    def _load_reference_ligand_text(self) -> str:
+        """Return reference ligand PDBQT text for RMSD validation, if selected."""
+        path_text = str(self.parameters.get("reference_ligand", "")).strip()
+        if not path_text:
+            return ""
+        reference_path = Path(path_text)
+        if not reference_path.exists() or not reference_path.is_file():
+            raise RuntimeError(f"Ligante de referencia nao encontrado: {reference_path}")
+        text = clean_pdbqt_text(
+            reference_path.read_text(encoding="utf-8", errors="replace")
+        )
+        if pdbqt_coordinate_bounds([reference_path]) is None:
+            raise RuntimeError(
+                f"Ligante de referencia sem coordenadas PDBQT validas: {reference_path.name}"
+            )
+        return text
+
+    def _annotate_reference_rmsd(self, rows: list[dict]) -> None:
+        """Add reference-ligand RMSD columns to result rows when available."""
+        reference_text = getattr(self, "_reference_ligand_text", "")
+        reference_path = str(self.parameters.get("reference_ligand", "")).strip()
+        if not reference_text:
+            return
+        cutoff = float(self.parameters.get("reference_rmsd_cutoff", 2.0) or 2.0)
+        for row in rows:
+            row["reference_ligand"] = reference_path
+            row["reference_rmsd_cutoff"] = cutoff
+            try:
+                pose_text = extract_pose_model(
+                    Path(row["output_file"]), int(row["mode"]), include_model=False
+                )
+                result = symmetry_corrected_rmsd(pose_text, reference_text)
+            except Exception as exc:  # noqa: BLE001 - keep docking results visible
+                row["reference_rmsd"] = ""
+                row["reference_rmsd_status"] = f"{type(exc).__name__}: {exc}"
+                row["reference_validation"] = "Not comparable"
+                continue
+            if result.comparable:
+                row["reference_rmsd"] = round(result.value, 3)
+                row["reference_rmsd_status"] = "OK"
+                row["reference_validation"] = "Pass" if result.value <= cutoff else "Fail"
+            else:
+                row["reference_rmsd"] = ""
+                row["reference_rmsd_status"] = result.reason
+                row["reference_validation"] = "Not comparable"
 
     def _run_external_scoring(
         self, scoring_key: str, ligand_results: list[dict]
@@ -705,10 +686,8 @@ class DockingWorker(QThread):
         )
         if sf_name == "ad4":
             raise RuntimeError(
-                "AutoDock4 (ad4) exige mapas de afinidade pré-calculados pelo AutoGrid4, "
-                "que não estão incluídos nesta versão. Use Vina ou Vinardo. "
-                "No Windows, GNINA não está disponível; use Linux/WSL se precisar da pontuação CNN. "
-                "Para habilitar o ad4, é necessário fornecer o autogrid4 e gerar os mapas."
+                "AutoDock4 (ad4) exige mapas de afinidade pre-calculados pelo AutoGrid4, "
+                "que nao estao incluidos no VinaLab Light. Use Vina ou Vinardo."
             )
         vina_instance = Vina(
             sf_name=sf_name,
@@ -762,126 +741,6 @@ class DockingWorker(QThread):
         clean_pdbqt_file(output_file)
         return self.parse_output_pdbqt(output_file, ligand_name)
 
-    def _dock_single_ligand_gnina(
-        self, ligand_path: Path, gnina_cli: Path
-    ) -> list[dict]:
-        """Dock a single ligand with GNINA when available."""
-        ligand_name = self._ligand_display_name(ligand_path)
-        output_file = (
-            self.output_directory / f"{safe_stem(Path(ligand_name))}_gnina_out.pdbqt"
-        )
-        command = [
-            str(gnina_cli),
-            "--receptor",
-            str(self.receptor_path),
-            "--ligand",
-            str(ligand_path),
-            "--center_x",
-            str(float(self.parameters["center_x"])),
-            "--center_y",
-            str(float(self.parameters["center_y"])),
-            "--center_z",
-            str(float(self.parameters["center_z"])),
-            "--size_x",
-            str(float(self.parameters["size_x"])),
-            "--size_y",
-            str(float(self.parameters["size_y"])),
-            "--size_z",
-            str(float(self.parameters["size_z"])),
-            "--exhaustiveness",
-            str(int(self.parameters["exhaustiveness"])),
-            "--num_modes",
-            str(int(self.parameters["num_modes"])),
-            "--out",
-            str(output_file),
-            "--cnn_scoring",
-            "rescore",
-        ]
-        self.log_signal.emit(
-            f"Executando docking de {ligand_name} com pontuação GNINA CNN."
-        )
-        completed = subprocess.run(
-            command,
-            cwd=self.output_directory,
-            env=native_tool_env(gnina_cli),
-            capture_output=True,
-            text=True,
-            check=False,
-            creationflags=NO_WINDOW,
-        )
-        for line in completed.stdout.splitlines():
-            self.log_signal.emit(line)
-        for line in completed.stderr.splitlines():
-            self.log_signal.emit(line)
-        if completed.returncode != 0:
-            raise RuntimeError(f"GNINA finalizou com código {completed.returncode}.")
-        clean_pdbqt_file(output_file)
-        return self.parse_output_pdbqt(output_file, ligand_name)
-
-    def _dock_single_ligand_smina(
-        self, ligand_path: Path, smina_cli: Path
-    ) -> list[dict]:
-        """Dock a single ligand with optional smina CLI."""
-        ligand_name = self._ligand_display_name(ligand_path)
-        output_file = (
-            self.output_directory / f"{safe_stem(Path(ligand_name))}_smina_out.pdbqt"
-        )
-        receptor_for_maps = self.rigid_receptor_path or self.receptor_path
-        command = [
-            str(smina_cli),
-            "--receptor",
-            str(receptor_for_maps),
-            "--ligand",
-            str(ligand_path),
-            "--center_x",
-            str(float(self.parameters["center_x"])),
-            "--center_y",
-            str(float(self.parameters["center_y"])),
-            "--center_z",
-            str(float(self.parameters["center_z"])),
-            "--size_x",
-            str(float(self.parameters["size_x"])),
-            "--size_y",
-            str(float(self.parameters["size_y"])),
-            "--size_z",
-            str(float(self.parameters["size_z"])),
-            "--exhaustiveness",
-            str(int(self.parameters["exhaustiveness"])),
-            "--num_modes",
-            str(int(self.parameters["num_modes"])),
-            "--energy_range",
-            str(float(self.parameters["energy_range"])),
-            "--min_rmsd",
-            str(float(self.parameters["min_rmsd"])),
-            "--cpu",
-            str(int(self.parameters["cpu"])),
-            "--out",
-            str(output_file),
-        ]
-        if int(self.parameters["seed"]) != 0:
-            command.extend(["--seed", str(int(self.parameters["seed"]))])
-        if self.flexible_receptor_path:
-            command.extend(["--flex", str(self.flexible_receptor_path)])
-
-        self.log_signal.emit(f"Executando docking de {ligand_name} com SMINA.")
-        completed = subprocess.run(
-            command,
-            cwd=self.output_directory,
-            env=native_tool_env(smina_cli),
-            capture_output=True,
-            text=True,
-            check=False,
-            creationflags=NO_WINDOW,
-        )
-        for line in completed.stdout.splitlines():
-            self.log_signal.emit(line)
-        for line in completed.stderr.splitlines():
-            self.log_signal.emit(line)
-        if completed.returncode != 0:
-            raise RuntimeError(f"SMINA finalizou com código {completed.returncode}.")
-        clean_pdbqt_file(output_file)
-        return self.parse_output_pdbqt(output_file, ligand_name)
-
     def _dock_single_ligand_cli(self, ligand_path: Path, vina_cli: Path) -> list[dict]:
         """Dock a single ligand with the bundled Vina CLI fallback."""
         sf_name = (
@@ -889,10 +748,8 @@ class DockingWorker(QThread):
         )
         if sf_name == "ad4":
             raise RuntimeError(
-                "AutoDock4 (ad4) exige mapas de afinidade pré-calculados pelo AutoGrid4, "
-                "que não estão incluídos nesta versão. Use Vina ou Vinardo. "
-                "No Windows, GNINA não está disponível; use Linux/WSL se precisar da pontuação CNN. "
-                "Para habilitar o ad4, é necessário fornecer o autogrid4 e gerar os mapas."
+                "AutoDock4 (ad4) exige mapas de afinidade pre-calculados pelo AutoGrid4, "
+                "que nao estao incluidos no VinaLab Light. Use Vina ou Vinardo."
             )
         ligand_name = self._ligand_display_name(ligand_path)
         scoring_suffix = safe_stem(
@@ -1076,12 +933,6 @@ class DockingWorker(QThread):
     def _vina_cli_path() -> Path | None:
         """Return a bundled or PATH AutoDock Vina CLI fallback."""
         return find_vina_executable()
-
-    @staticmethod
-    def _gnina_cli_path() -> Path | None:
-        """Return a GNINA executable from PATH or a local tools directory."""
-        return find_gnina_executable()
-
 
 def _safe_extract_archive(archive_path: Path, destination: Path) -> None:
     """Extract an archive into ``destination`` rejecting path-traversal members.

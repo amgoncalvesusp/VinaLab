@@ -13,10 +13,10 @@ class I18n:
 
     STRINGS = {
         "app_title": {
-            "pt": "VinaLab — Docking Molecular",
-            "en": "VinaLab — Molecular Docking",
+            "pt": "VinaLab Light — AutoDock Vina",
+            "en": "VinaLab Light — AutoDock Vina",
         },
-        "window_title": {"pt": "VinaLab v1.0.1", "en": "VinaLab v1.0.1"},
+        "window_title": {"pt": "VinaLab Light v1.0.1", "en": "VinaLab Light v1.0.1"},
         "author_label": {
             "pt": "Desenvolvido por Adriano Marques Gonçalves — UNIARA",
             "en": "Developed by Adriano Marques Gonçalves — UNIARA",
@@ -45,6 +45,7 @@ class I18n:
         "validate_protocol": {"pt": "Validar protocolo", "en": "Validate Protocol"},
         "view_selected_pose": {"pt": "Abrir no PyMOL", "en": "Open in PyMOL"},
         "pose_3d_view": {"pt": "Visualização 3D", "en": "3D View"},
+        "box_3d_view": {"pt": "Caixa 3D", "en": "3D Box"},
         "compare_button": {"pt": "Comparar", "en": "Compare"},
         "export_filtered_subset": {
             "pt": "Exportar subconjunto filtrado",
@@ -149,6 +150,15 @@ class I18n:
         "docking_score": {
             "pt": "Score de docking (kcal/mol)",
             "en": "Docking score (kcal/mol)",
+        },
+        "reference_rmsd": {"pt": "RMSD referencia", "en": "Reference RMSD"},
+        "reference_validation": {
+            "pt": "Validacao referencia",
+            "en": "Reference validation",
+        },
+        "score_vs_reference_rmsd": {
+            "pt": "Score vs RMSD referencia",
+            "en": "Score vs reference RMSD",
         },
         "rmsd_best_pose": {"pt": "RMSD para melhor pose", "en": "RMSD to best pose"},
         "pinned": {"pt": "Fixada", "en": "Pinned"},
@@ -333,6 +343,31 @@ class I18n:
         "search_box": {"pt": "4. Caixa de busca (Å)", "en": "4. Search box (Å)"},
         "center_label": {"pt": "Centro (x, y, z)", "en": "Center (x, y, z)"},
         "size_label": {"pt": "Tamanho (x, y, z)", "en": "Size (x, y, z)"},
+        "reference_ligand": {
+            "pt": "Ligante de referencia/base",
+            "en": "Reference/base ligand",
+        },
+        "reference_ligand_button": {"pt": "Escolher PDBQT", "en": "Choose PDBQT"},
+        "tip_reference_ligand": {
+            "pt": "Usado para centralizar a caixa e calcular o RMSD das poses contra a referencia.",
+            "en": "Used to center the box and calculate pose RMSD against the reference.",
+        },
+        "reference_padding": {
+            "pt": "Padding da referencia (A)",
+            "en": "Reference padding (A)",
+        },
+        "tip_reference_padding": {
+            "pt": "Margem adicionada em cada lado do ligante de referencia ao ajustar a caixa.",
+            "en": "Margin added around the reference ligand when fitting the docking box.",
+        },
+        "reference_rmsd_cutoff": {
+            "pt": "Corte RMSD referencia (A)",
+            "en": "Reference RMSD cutoff (A)",
+        },
+        "tip_reference_rmsd_cutoff": {
+            "pt": "Limite usado para marcar uma pose como validada contra o ligante de referencia.",
+            "en": "Threshold used to mark a pose as validated against the reference ligand.",
+        },
         "box_preset_custom": {"pt": "Personalizado", "en": "Custom"},
         "box_preset_small_15": {"pt": "Pequena (15x15x15)", "en": "Small (15x15x15)"},
         "box_preset_medium_20": {"pt": "Média (20x20x20)", "en": "Medium (20x20x20)"},
@@ -520,6 +555,46 @@ class I18n:
             "en": "Select an output directory.",
         },
         "help_title": {"pt": "Guia Rápido", "en": "Quick Guide"},
+        "help_beginner_flow_title": {
+            "pt": "Primeiro docking em 6 passos",
+            "en": "First docking in 6 steps",
+        },
+        "help_beginner_flow": {
+            "pt": "1. Converta receptor e ligante para PDBQT, se ainda estiverem em PDB, MOL2 ou SDF.\n2. Selecione o receptor rígido e um ligante ou pasta de ligantes.\n3. Escolha Vina ou Vinardo.\n4. Defina a caixa no sítio de ligação; se houver ligante co-cristalizado, use-o como referência.\n5. Confira a caixa na aba Caixa 3D e execute o docking.\n6. Revise afinidade, poses, interações, clusters e RMSD contra a referência.",
+            "en": "1. Convert receptor and ligand to PDBQT if they are still PDB, MOL2, or SDF.\n2. Select the rigid receptor and one ligand or a ligand folder.\n3. Choose Vina or Vinardo.\n4. Define the box over the binding site; if a co-crystal ligand is available, use it as reference.\n5. Check the box in the 3D Box tab and run docking.\n6. Review affinity, poses, interactions, clusters, and RMSD against the reference.",
+        },
+        "help_light_scope_title": {
+            "pt": "O que há nesta versão Light",
+            "en": "What is in this Light version",
+        },
+        "help_light_scope": {
+            "pt": "O VinaLab Light foca no essencial do AutoDock Vina: conversão para PDBQT, Vina/Vinardo, visualização da caixa, análise de resultados, relatório e envio ao PyMOL quando ele estiver no PATH. GNINA e modelos CNN não fazem parte desta versão.",
+            "en": "VinaLab Light focuses on the AutoDock Vina essentials: PDBQT conversion, Vina/Vinardo, box visualization, result analysis, reports, and PyMOL handoff when PyMOL is on PATH. GNINA and CNN models are not part of this version.",
+        },
+        "help_converter_title": {
+            "pt": "Conversão sem susto",
+            "en": "Conversion without surprises",
+        },
+        "help_converter": {
+            "pt": "Use o conversor quando seus arquivos ainda não estiverem em PDBQT. Para ligantes, SDF e MOL2 geralmente preservam melhor ligações e estados químicos do que PDB simples. Depois da conversão, confira se o arquivo gerado aparece sem erro antes de seguir.",
+            "en": "Use the converter when your files are not yet PDBQT. For ligands, SDF and MOL2 usually preserve bonds and chemical states better than plain PDB. After conversion, make sure the generated file appears without errors before continuing.",
+        },
+        "help_prepare_title": {
+            "pt": "Prepare o receptor antes do docking",
+            "en": "Prepare the receptor before docking",
+        },
+        "help_prepare": {
+            "pt": "Remova águas e moléculas que não fazem parte do receptor, mantenha cofatores importantes e escolha a cadeia correta quando houver mais de uma. O receptor final deve ser rígido e estar em PDBQT.",
+            "en": "Remove waters and molecules that are not part of the receptor, keep important cofactors, and choose the right chain when there is more than one. The final receptor should be rigid and in PDBQT.",
+        },
+        "help_setup_title": {
+            "pt": "Arquivos de entrada",
+            "en": "Input files",
+        },
+        "help_setup": {
+            "pt": "Para um teste rápido, use um receptor PDBQT e um ligante PDBQT. Para triagem, selecione uma pasta com vários ligantes PDBQT; o app processa cada arquivo em sequência e junta os resultados na tabela.",
+            "en": "For a quick test, use one receptor PDBQT and one ligand PDBQT. For screening, select a folder with multiple PDBQT ligands; the app processes each file in sequence and merges the results in the table.",
+        },
         "help_what_is_vina": {
             "pt": "O AutoDock Vina prediz como uma molécula pequena (ligante) se encaixa em uma proteína (receptor), estimando a energia de ligação em kcal/mol. Valores mais negativos indicam maior afinidade.",
             "en": "AutoDock Vina predicts how a small molecule (ligand) fits into a protein (receptor), estimating binding energy in kcal/mol. More negative values indicate stronger binding.",
@@ -536,6 +611,22 @@ class I18n:
             "pt": "Exaustividade aumenta a profundidade da busca. Valores maiores demoram mais, mas podem melhorar a amostragem.",
             "en": "Exhaustiveness increases search depth. Higher values take longer but may improve sampling.",
         },
+        "help_reference_ligand_title": {
+            "pt": "Use um ligante de referência quando possível",
+            "en": "Use a reference ligand when possible",
+        },
+        "help_reference_ligand": {
+            "pt": "Se houver ligante co-cristalizado ou uma pose conhecida, escolha esse PDBQT como ligante de referência. O VinaLab usa suas coordenadas para centralizar a caixa e depois calcula o RMSD das novas poses contra essa base.",
+            "en": "If a co-crystal ligand or known pose is available, choose that PDBQT as the reference ligand. VinaLab uses its coordinates to center the box and later calculates RMSD for new poses against that baseline.",
+        },
+        "help_box_preview_title": {
+            "pt": "Confira a caixa em 3D",
+            "en": "Check the box in 3D",
+        },
+        "help_box_preview": {
+            "pt": "A aba Caixa 3D mostra o receptor, o centro e o volume do docking. Antes de executar, confirme se a caixa cobre o sítio de ligação sem ficar grande demais; caixas muito grandes deixam a busca mais lenta e menos focada.",
+            "en": "The 3D Box tab shows the receptor, center, and docking volume. Before running, confirm that the box covers the binding site without being unnecessarily large; very large boxes make the search slower and less focused.",
+        },
         "help_affinity": {
             "pt": "Afinidade é reportada em kcal/mol. Em geral, valores mais negativos indicam ligação prevista mais favorável.",
             "en": "Affinity is reported in kcal/mol. More negative values generally indicate more favorable predicted binding.",
@@ -544,9 +635,33 @@ class I18n:
             "pt": "RMSD compara poses. Valores baixos indicam poses geometricamente semelhantes.",
             "en": "RMSD compares poses. Low values indicate geometrically similar poses.",
         },
+        "help_results_title": {
+            "pt": "Como ler os resultados",
+            "en": "How to read results",
+        },
+        "help_results": {
+            "pt": "Comece pela melhor afinidade, mas não pare nela. Abra a pose em 3D, confira contatos no painel de interações, compare clusters e veja se a pose fica coerente com o sítio de ligação.",
+            "en": "Start with the best affinity, but do not stop there. Open the pose in 3D, inspect contacts in the interactions panel, compare clusters, and check whether the pose is plausible in the binding site.",
+        },
+        "help_pymol_title": {
+            "pt": "PyMOL como apoio visual",
+            "en": "PyMOL as a visual aid",
+        },
+        "help_pymol": {
+            "pt": "Se o PyMOL estiver no PATH, use Abrir no PyMOL para inspecionar receptor, pose e complexo com mais liberdade. Isso é útil para validar contatos, orientação do ligante e conflitos estéricos.",
+            "en": "If PyMOL is on PATH, use Open in PyMOL to inspect receptor, pose, and complex more freely. This helps validate contacts, ligand orientation, and steric clashes.",
+        },
         "help_batch": {
             "pt": "No modo triagem, a pasta selecionada é varrida recursivamente e cada PDBQT é processado em sequência.",
             "en": "In screening mode, the selected folder is scanned recursively and each PDBQT is processed sequentially.",
+        },
+        "help_report_title": {
+            "pt": "Relatório para registrar o ensaio",
+            "en": "Report for documenting the run",
+        },
+        "help_report": {
+            "pt": "Gere o relatório depois de revisar filtros, poses e estatísticas. Para reprodutibilidade, salve também a configuração da caixa, a função de pontuação, seed e pasta de saída.",
+            "en": "Generate the report after reviewing filters, poses, and statistics. For reproducibility, also save the box setup, scoring function, seed, and output folder.",
         },
         "welcome_title": {"pt": "Bem-vindo ao VinaLab", "en": "Welcome to VinaLab"},
         "welcome_body": {
@@ -554,6 +669,10 @@ class I18n:
             "en": "Graphical interface for AutoDock Vina with environment setup, screening execution, and reports.",
         },
         "get_started": {"pt": "Começar", "en": "Get started"},
+        "welcome_light_body": {
+            "pt": "VinaLab Light é uma interface gráfica para AutoDock Vina. Fluxo recomendado: converta seus arquivos para PDBQT, escolha receptor e ligante, defina a caixa no sítio de ligação, execute Vina ou Vinardo e analise poses, interações, clusters e RMSD. Abra Ajuda > Guia rápido sempre que quiser dicas da aba atual.",
+            "en": "VinaLab Light is a graphical interface for AutoDock Vina. Recommended flow: convert files to PDBQT, choose receptor and ligand, define the box over the binding site, run Vina or Vinardo, then analyze poses, interactions, clusters, and RMSD. Open Help > Quick Guide whenever you want tips for the current tab.",
+        },
         "about_title": {"pt": "Sobre o VinaLab", "en": "About VinaLab"},
         "version_label": {"pt": "Versão 1.0.1", "en": "Version 1.0.1"},
         "license_label": {"pt": "Licença: Apache 2.0", "en": "License: Apache 2.0"},

@@ -452,6 +452,92 @@ def build_pose_view_html(
 </html>"""
 
 
+def build_box_preview_html(receptor_path: Path | None, box: dict | None) -> str:
+    """Return a 3Dmol.js HTML document for the receptor and docking search box."""
+    receptor_text = ""
+    receptor_name = "Sem receptor"
+    if receptor_path is not None and receptor_path.exists():
+        receptor_name = receptor_path.name
+        receptor_text = pdbqt_text_to_view_pdb(
+            receptor_path.read_text(encoding="utf-8", errors="replace"),
+            include_conect=False,
+        )
+    box_js = _box_preview_js(box)
+    has_receptor = bool(receptor_text.strip())
+    status = _box_status_label(box)
+    return f"""<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="https://cdn.jsdelivr.net/npm/3dmol@2.1.0/build/3Dmol-min.js"></script>
+  <style>
+    html, body {{ margin: 0; width: 100%; height: 100%; overflow: hidden; background: #0b0d12; color: #edf2ff; }}
+    #viewer {{ width: 100vw; height: 100vh; position: relative; }}
+    #label {{
+      position: absolute; top: 12px; left: 12px; z-index: 10; padding: 8px 10px;
+      background: rgba(10, 14, 22, 0.78); border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 8px; font: 13px Segoe UI, sans-serif;
+    }}
+    #hint {{
+      position: absolute; bottom: 12px; left: 12px; right: 12px; z-index: 10; padding: 7px 9px;
+      background: rgba(10, 14, 22, 0.72); border-radius: 8px; font: 12px Segoe UI, sans-serif;
+      color: #b9c4d8;
+    }}
+  </style>
+</head>
+<body>
+  <div id="viewer"></div>
+  <div id="label">{html.escape(receptor_name)} | {html.escape(status)}</div>
+  <div id="hint">Caixa: wireframe amarelo | centro: esfera amarela | receptor: cartoon + superficie local transparente</div>
+  <script>
+    const receptorPdb = {json.dumps(receptor_text)};
+    function renderBox() {{
+      if (typeof $3Dmol === "undefined") {{
+        document.getElementById("label").textContent = "3Dmol.js indisponivel";
+        return;
+      }}
+      const viewer = $3Dmol.createViewer("viewer", {{backgroundColor: "#0b0d12"}});
+      let receptorModel = null;
+      if ({json.dumps(has_receptor)}) {{
+        receptorModel = viewer.addModel(receptorPdb, "pdb");
+        receptorModel.setStyle({{}}, {{cartoon: {{color: "spectrum", opacity: 0.78}}}});
+        try {{
+          viewer.addSurface($3Dmol.SurfaceType.VDW, {{opacity: 0.12, color: "white"}}, {{model: receptorModel}});
+        }} catch (error) {{
+          console.log("Surface skipped:", error);
+        }}
+      }}
+      {box_js}
+      viewer.zoomTo();
+      viewer.render();
+      window.addEventListener("resize", () => {{ viewer.resize(); viewer.render(); }});
+    }}
+    renderBox();
+  </script>
+</body>
+</html>"""
+
+
+def _box_status_label(box: dict | None) -> str:
+    """Return a compact label for current search-box parameters."""
+    if not box:
+        return "Caixa nao definida"
+    center = (
+        float(box.get("center_x", 0.0)),
+        float(box.get("center_y", 0.0)),
+        float(box.get("center_z", 0.0)),
+    )
+    size = (
+        float(box.get("size_x", 0.0)),
+        float(box.get("size_y", 0.0)),
+        float(box.get("size_z", 0.0)),
+    )
+    return (
+        f"Centro {center[0]:.2f}, {center[1]:.2f}, {center[2]:.2f} | "
+        f"Tamanho {size[0]:.1f} x {size[1]:.1f} x {size[2]:.1f} A"
+    )
+
+
 def build_comparison_html(
     title: str, receptor_pdb: Path, pose_a_pdb: Path, pose_b_pdb: Path
 ) -> str:

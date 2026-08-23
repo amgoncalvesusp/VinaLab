@@ -10,6 +10,12 @@ __pycache__/
 environment_status.json
 release/
 artifacts/
+.venv_*/
+conda_*/
+build_*/
+dist_*/
+artifacts_*/
+.tmp_pytest*/
 # tools/gnina IS tracked: the CI runner does a clean checkout, so the GNINA
 # binary+models must be in git for PyInstaller to bundle them into the exe.
 # Largest file is ~19 MB (under GitHub's 100 MB limit); total ~200 MB.
