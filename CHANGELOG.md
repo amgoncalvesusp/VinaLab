@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.1.0 - 2026-09-03
+
+Correcoes e melhorias a partir da avaliacao de um usuario (docking de peptideos contra KPC-2).
+
+- Conversor: a protonacao de ligantes pelo Open Babel agora usa pH fisiologico (`-p 7.4`) em vez de `-h`. Arquivos MOL2 de peptideos com terminais carregados (N.4, O.co2) e sem hidrogenios explicitos passam a ser convertidos como na linha de comando.
+- Conversor: arquivos MOL2/SDF com varias moleculas deixam de ser truncados em silencio; o log avisa quantas moleculas existem e que apenas a primeira foi convertida.
+- Preparar Proteina: nova secao "Ligante co-cristalizado" lista os residuos HETATM do PDB (aguas excluidas, com contagem de atomos) e exporta o residuo escolhido para um PDB proprio. Resolve a extracao de ligantes de estruturas como a 6D15.
+- Docking: o seletor de ligante de referencia/base aceita `.pdb` alem de `.pdbqt`, para usar direto o ligante extraido ao centralizar a caixa de busca.
+- Resultados: os cabecalhos da tabela deixam de ser cortados (colunas dimensionadas pelo conteudo em vez de esticadas em partes iguais) e os filtros de afinidade/RMSD e o botao de pontuacao passam a exibir o texto completo.
+- Resultados: a exportacao de complexos nao trava mais a janela. Falhas agora aparecem em uma mensagem indicando quantos arquivos sairam antes do erro, e o Open Babel tem tempo limite de 120 s por pose.
+- Resultados: a exportacao passa a gravar de fato o complexo receptor+pose em um `.pdb` unico (`<pose>_complex.pdb`), com numeracao de atomos continua, a pose como HETATM na cadeia Z e registros CONECT do ligante. A caixa de selecao vem marcada por padrao e o arquivo da pose continua sendo exportado no formato escolhido.
+- Testes: o stub de PySide6 do `test_docking_helpers` so e instalado quando o PySide6 realmente falta. Antes ele vazava para os demais modulos de teste no mesmo processo do pytest e quebrava a coleta.
+- Empacotamento: os arquivos publicados passam a se chamar `VinaLab-Light-<versao>-...` e o instalador Windows e o atalho Linux exibem "VinaLab Light", deixando a edicao explicita.
+
 ## 1.0.1 - 2026-07-07
 
 - Reposiciona a aplicacao como VinaLab Light, uma GUI leve para AutoDock Vina.

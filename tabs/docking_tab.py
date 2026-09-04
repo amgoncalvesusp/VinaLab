@@ -969,7 +969,8 @@ class DockingTab(QWidget):
             self,
             I18n.get("dt_ref_ligand_title", self.lang),
             "",
-            f"{I18n.get('pdbqt_filter', self.lang)};;{I18n.get('all_files', self.lang)}",
+            f"{I18n.get('reference_ligand_filter', self.lang)};;"
+            f"{I18n.get('all_files', self.lang)}",
         )
         if not file_name:
             return
@@ -981,7 +982,8 @@ class DockingTab(QWidget):
             self,
             I18n.get("dt_ref_ligand_title", self.lang),
             "",
-            f"{I18n.get('pdbqt_filter', self.lang)};;{I18n.get('all_files', self.lang)}",
+            f"{I18n.get('reference_ligand_filter', self.lang)};;"
+            f"{I18n.get('all_files', self.lang)}",
         )
         if not file_name:
             return

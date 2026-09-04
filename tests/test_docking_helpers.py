@@ -9,23 +9,28 @@ import types
 import unittest
 from unittest import mock
 
-qtcore = types.ModuleType("PySide6.QtCore")
+# core.docking_engine needs QThread/Signal. Stub them ONLY when PySide6 is really
+# missing: a stub left in sys.modules is not a package, so every later test module
+# in the same pytest process fails to import PySide6.QtWidgets.
+try:  # noqa: SIM105 - the import itself is the availability probe
+    import PySide6.QtCore  # noqa: F401
+except ImportError:
+    qtcore = types.ModuleType("PySide6.QtCore")
 
+    class _DummyQThread:
+        pass
 
-class _DummyQThread:
-    pass
+    class _DummySignal:
+        def __init__(self, *args, **kwargs) -> None:
+            self.args = args
+            self.kwargs = kwargs
 
-
-class _DummySignal:
-    def __init__(self, *args, **kwargs) -> None:
-        self.args = args
-        self.kwargs = kwargs
-
-
-qtcore.QThread = _DummyQThread
-qtcore.Signal = _DummySignal
-sys.modules.setdefault("PySide6", types.ModuleType("PySide6"))
-sys.modules["PySide6.QtCore"] = qtcore
+    qtcore.QThread = _DummyQThread
+    qtcore.Signal = _DummySignal
+    pyside = types.ModuleType("PySide6")
+    pyside.__path__ = []  # keep it importable as a package for submodule lookups
+    sys.modules.setdefault("PySide6", pyside)
+    sys.modules["PySide6.QtCore"] = qtcore
 
 from core.docking_engine import (
     DockingWorker,

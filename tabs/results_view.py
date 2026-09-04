@@ -144,8 +144,8 @@ def _pdb_file_has_atoms(path: Path) -> bool:
     )
 
 
-def pdbqt_text_to_view_pdb(text: str, include_conect: bool) -> str:
-    """Convert PDBQT text to viewer-safe PDB, preserving coordinates and adding simple ligand CONECT records."""
+def parse_pdbqt_atoms(text: str) -> tuple[list[dict], set[tuple[int, int]]]:
+    """Return the atoms of the first PDBQT model plus the bonds its BRANCH records force."""
     atoms: list[dict] = []
     forced_bonds: set[tuple[int, int]] = set()
     seen_model = False
@@ -167,11 +167,58 @@ def pdbqt_text_to_view_pdb(text: str, include_conect: bool) -> str:
         atom = _pdbqt_atom_record(line)
         if atom:
             atoms.append(atom)
+    return atoms, forced_bonds
+
+
+def pdbqt_text_to_view_pdb(text: str, include_conect: bool) -> str:
+    """Convert PDBQT text to viewer-safe PDB, preserving coordinates and adding simple ligand CONECT records."""
+    atoms, forced_bonds = parse_pdbqt_atoms(text)
     output_lines = [_format_view_pdb_atom(atom) for atom in atoms]
     if include_conect:
         output_lines.extend(_infer_conect_records(atoms, forced_bonds))
     output_lines.append("END")
     return "\n".join(output_lines) + "\n"
+
+
+def build_complex_pdb(receptor_pdbqt_text: str, pose_pdbqt_text: str) -> str:
+    """Merge a receptor and one docked pose into a single PDB complex.
+
+    Atom serials are renumbered across both molecules so the pose CONECT records
+    stay unambiguous, and the pose is written as HETATM in chain Z so viewers and
+    selections (`chain Z`, `hetatm`) can address the ligand on its own.
+    """
+    receptor_atoms, _ = parse_pdbqt_atoms(receptor_pdbqt_text)
+    pose_atoms, pose_bonds = parse_pdbqt_atoms(pose_pdbqt_text)
+    if not receptor_atoms:
+        raise ValueError("O receptor não contém átomos PDBQT para montar o complexo.")
+    if not pose_atoms:
+        raise ValueError("A pose não contém átomos PDBQT para montar o complexo.")
+
+    lines: list[str] = []
+    serial = 0
+    for atom in receptor_atoms:
+        serial += 1
+        lines.append(_format_view_pdb_atom({**atom, "serial": serial}))
+    lines.append("TER")
+
+    pose_serial_map: dict[int, int] = {}
+    renumbered_pose: list[dict] = []
+    for atom in pose_atoms:
+        serial += 1
+        pose_serial_map[int(atom["serial"])] = serial
+        renumbered_pose.append(
+            {**atom, "serial": serial, "record": "HETATM", "chain": "Z"}
+        )
+    lines.extend(_format_view_pdb_atom(atom) for atom in renumbered_pose)
+
+    remapped_bonds = {
+        tuple(sorted((pose_serial_map[left], pose_serial_map[right])))
+        for left, right in pose_bonds
+        if left in pose_serial_map and right in pose_serial_map
+    }
+    lines.extend(_infer_conect_records(renumbered_pose, remapped_bonds))
+    lines.append("END")
+    return "\n".join(lines) + "\n"
 
 
 def _pdbqt_branch_bond(line: str) -> tuple[int, int] | None:

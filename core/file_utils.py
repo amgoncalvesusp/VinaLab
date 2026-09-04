@@ -247,6 +247,42 @@ def clean_pdbqt_file(path: Path) -> bool:
     return True
 
 
+WATER_RESIDUES = frozenset({"HOH", "WAT", "DOD", "H2O", "SOL", "TIP", "TIP3"})
+
+
+def hetatm_residue_counts(text: str) -> dict[tuple[str, str, str], int]:
+    """Count HETATM atoms per (resname, chain, resseq), skipping waters.
+
+    Used to offer the co-crystal ligands of a PDB for extraction; cofactors and
+    cryoprotectants (GOL and friends) are listed too, the atom count tells them
+    apart from the real inhibitor.
+    """
+    counts: dict[tuple[str, str, str], int] = {}
+    for line in text.splitlines():
+        if not line.startswith("HETATM") or len(line) < 27:
+            continue
+        resname = line[17:20].strip().upper()
+        if resname in WATER_RESIDUES:
+            continue
+        key = (resname, line[21].strip(), line[22:27].strip())
+        counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def hetatm_residue_lines(text: str, key: tuple[str, str, str]) -> list[str]:
+    """Return the HETATM lines of one residue identified by hetatm_residue_counts."""
+    resname, chain, resseq = key
+    return [
+        line
+        for line in text.splitlines()
+        if line.startswith("HETATM")
+        and len(line) >= 27
+        and line[17:20].strip().upper() == resname
+        and line[21].strip() == chain
+        and line[22:27].strip() == resseq
+    ]
+
+
 def validate_ligand_pdbqt(path: Path) -> PdbqtLigandIntegrity:
     """Validate that a ligand PDBQT represents one connected ligand, not multiple poses/fragments."""
     integrity = pdbqt_ligand_integrity(path)

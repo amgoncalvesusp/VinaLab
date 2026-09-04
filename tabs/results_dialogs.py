@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QButtonGroup,
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -55,6 +56,7 @@ from core.i18n import I18n
 from core.rmsd import symmetry_corrected_rmsd
 from tabs.results_view import (
     build_comparison_html,
+    build_complex_pdb,
     pdbqt_text_to_view_pdb,
     prepare_pose_view_files,
     safe_export_name,
@@ -64,6 +66,8 @@ if TYPE_CHECKING:
     from tabs.results_tab import ResultsTab
 
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0
+# Cap Open Babel so a stuck conversion cannot freeze the export dialog.
+OBABEL_EXPORT_TIMEOUT_S = 120
 
 
 class ComparisonDialog(QDialog):
@@ -533,6 +537,8 @@ class ExportComplexDialog(QDialog):
         self.top_n_spin.setValue(1)
         self.format_combo = QComboBox()
         self.format_combo.addItems(["pdbqt", "pdb", "mol2"])
+        self.complex_checkbox = QCheckBox(I18n.get("rd_export_complex_pdb", self.lang))
+        self.complex_checkbox.setChecked(True)
         self.folder_edit = QLineEdit()
         self.progress_bar = QProgressBar()
         self.export_button = QPushButton(I18n.get("rd_export_btn", self.lang))
@@ -553,6 +559,7 @@ class ExportComplexDialog(QDialog):
         format_row.addWidget(QLabel(I18n.get("rd_format_label", self.lang)))
         format_row.addWidget(self.format_combo)
         layout.addLayout(format_row)
+        layout.addWidget(self.complex_checkbox)
 
         folder_row = QHBoxLayout()
         folder_row.addWidget(self.folder_edit)
@@ -605,11 +612,26 @@ class ExportComplexDialog(QDialog):
             return
 
         exported = 0
-        for index, row in enumerate(rows, start=1):
-            self._export_row(row, output_dir, export_format)
-            exported += 1
-            self.progress_bar.setValue(int(index / len(rows) * 100))
-            QApplication.processEvents()
+        self.export_button.setEnabled(False)
+        try:
+            for index, row in enumerate(rows, start=1):
+                self._export_row(row, output_dir, export_format)
+                exported += 1
+                self.progress_bar.setValue(int(index / len(rows) * 100))
+                QApplication.processEvents()
+        except Exception as exc:  # noqa: BLE001 - any failure must reach the user
+            # Without this the dialog just sat there with a stalled progress bar
+            # and no message, which reads as a frozen window.
+            QMessageBox.critical(
+                self,
+                title,
+                I18n.get("rd_export_failed", self.lang).format(
+                    exported=exported, exc=exc
+                ),
+            )
+            return
+        finally:
+            self.export_button.setEnabled(True)
 
         QMessageBox.information(
             self,
@@ -651,28 +673,38 @@ class ExportComplexDialog(QDialog):
         return rows
 
     def _export_row(self, row: dict, output_dir: Path, export_format: str) -> None:
-        """Export a single pose row."""
+        """Export a single pose row, plus the receptor-pose complex when requested."""
         pose_basename = f"{safe_export_name(row['ligand_name'])}_pose{int(row['mode'])}"
-        pose_pdbqt = output_dir / f"{pose_basename}.pdbqt"
-        pose_pdbqt.write_text(
-            extract_pose_model(
-                Path(row["output_file"]), int(row["mode"]), include_model=False
-            ),
-            encoding="utf-8",
+        pose_text = extract_pose_model(
+            Path(row["output_file"]), int(row["mode"]), include_model=False
         )
+        pose_pdbqt = output_dir / f"{pose_basename}.pdbqt"
+        pose_pdbqt.write_text(pose_text, encoding="utf-8")
+        if self.complex_checkbox.isChecked():
+            self._write_complex_pdb(
+                row, pose_text, output_dir / f"{pose_basename}_complex.pdb"
+            )
         if export_format == "pdbqt":
             return
 
         output_path = output_dir / f"{pose_basename}.{export_format}"
         obabel = find_obabel_executable()
-        completed = subprocess.run(
-            [obabel, str(pose_pdbqt), "-O", str(output_path)],
-            env=native_tool_env(Path(obabel)),
-            capture_output=True,
-            text=True,
-            check=False,
-            creationflags=NO_WINDOW,
-        )
+        try:
+            completed = subprocess.run(
+                [obabel, str(pose_pdbqt), "-O", str(output_path)],
+                env=native_tool_env(Path(obabel)),
+                capture_output=True,
+                text=True,
+                check=False,
+                creationflags=NO_WINDOW,
+                timeout=OBABEL_EXPORT_TIMEOUT_S,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                I18n.get("rd_obabel_timeout", self.lang).format(
+                    seconds=OBABEL_EXPORT_TIMEOUT_S
+                )
+            ) from exc
         if completed.returncode != 0:
             raise RuntimeError(
                 completed.stderr.strip()
@@ -680,3 +712,22 @@ class ExportComplexDialog(QDialog):
                 or I18n.get("rd_obabel_conv_fail", self.lang)
             )
         pose_pdbqt.unlink(missing_ok=True)
+
+    def _write_complex_pdb(self, row: dict, pose_text: str, output_path: Path) -> None:
+        """Write the receptor plus the docked pose as one PDB complex.
+
+        # ponytail: PDB only. It is what PyMOL/Chimera open directly, and running a
+        # whole receptor through Open Babel just to reach mol2 buys unreliable bond
+        # perception for a much slower export.
+        """
+        receptor_file = Path(str(row.get("receptor_file", "")))
+        if not receptor_file.exists():
+            raise FileNotFoundError(
+                I18n.get("rd_receptor_missing", self.lang).format(path=receptor_file)
+            )
+        output_path.write_text(
+            build_complex_pdb(
+                receptor_file.read_text(encoding="utf-8", errors="replace"), pose_text
+            ),
+            encoding="utf-8",
+        )

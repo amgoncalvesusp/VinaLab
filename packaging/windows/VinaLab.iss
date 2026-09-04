@@ -1,6 +1,6 @@
-#define MyAppName "VinaLab"
+#define MyAppName "VinaLab Light"
 #ifndef MyAppVersion
-#define MyAppVersion "1.0.1"
+#define MyAppVersion "1.1.0"
 #endif
 #define MyAppExeName "VinaLab.exe"
 
@@ -14,7 +14,7 @@ DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 LicenseFile=..\..\LICENSE
 OutputDir=..\..\artifacts
-OutputBaseFilename=VinaLab-{#MyAppVersion}-windows-x64-setup
+OutputBaseFilename=VinaLab-Light-{#MyAppVersion}-windows-x64-setup
 SetupIconFile=..\..\ui\icon.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2

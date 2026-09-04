@@ -15,6 +15,8 @@ import zipfile
 
 
 APP_NAME = "VinaLab"
+# Downloadable artifacts are named for the edition; APP_NAME stays the executable name.
+RELEASE_BASENAME = "VinaLab-Light"
 DEB_PACKAGE_NAME = "vinalab"
 LINUX_ARCH = "amd64"
 LINUX_DEB_DEPENDS = (
@@ -56,9 +58,9 @@ def package_windows(version: str, dist_dir: Path, output_dir: Path) -> list[Path
     exe_path = dist_dir / f"{APP_NAME}.exe"
     require_file(exe_path)
 
-    portable = output_dir / f"{APP_NAME}-{version}-windows-x64-portable.zip"
-    installer = output_dir / f"{APP_NAME}-{version}-windows-x64-installer.zip"
-    setup = output_dir / f"{APP_NAME}-{version}-windows-x64-setup.exe"
+    portable = output_dir / f"{RELEASE_BASENAME}-{version}-windows-x64-portable.zip"
+    installer = output_dir / f"{RELEASE_BASENAME}-{version}-windows-x64-installer.zip"
+    setup = output_dir / f"{RELEASE_BASENAME}-{version}-windows-x64-setup.exe"
 
     write_zip(
         portable,
@@ -94,7 +96,7 @@ def package_windows(version: str, dist_dir: Path, output_dir: Path) -> list[Path
 def package_unix(version: str, dist_dir: Path, output_dir: Path, target: str) -> Path:
     executable = dist_dir / APP_NAME
     require_file(executable)
-    archive = output_dir / f"{APP_NAME}-{version}-{target}-x64.tar.gz"
+    archive = output_dir / f"{RELEASE_BASENAME}-{version}-{target}-x64.tar.gz"
     entries = [
         (executable, APP_NAME),
         (Path("README.md"), "README.md"),
@@ -132,7 +134,7 @@ def package_linux_deb(version: str, executable: Path, output_dir: Path) -> Path:
         raise FileNotFoundError(
             "dpkg-deb not found; build the Linux installer on Ubuntu/Debian."
         )
-    deb_path = output_dir / f"{APP_NAME}-{version}-ubuntu-x64.deb"
+    deb_path = output_dir / f"{RELEASE_BASENAME}-{version}-ubuntu-x64.deb"
     if deb_path.exists():
         deb_path.unlink()
     with tempfile.TemporaryDirectory(prefix="vinalab-deb-") as tmpdir:

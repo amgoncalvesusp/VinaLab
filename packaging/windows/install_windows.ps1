@@ -5,7 +5,7 @@ $AppName = "VinaLab"
 $InstallRoot = Join-Path $env:LOCALAPPDATA $AppName
 $SourceDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $VersionFile = Join-Path $SourceDir "VERSION"
-$Version = "1.0.1"
+$Version = "1.1.0"
 if (Test-Path $VersionFile) {
     $Version = (Get-Content -Raw -Path $VersionFile).Trim()
 }
@@ -29,8 +29,8 @@ $Shell = New-Object -ComObject WScript.Shell
 $Shortcut = $Shell.CreateShortcut($ShortcutPath)
 $Shortcut.TargetPath = $ExeTarget
 $Shortcut.WorkingDirectory = $InstallRoot
-$Shortcut.Description = "VinaLab $Version"
+$Shortcut.Description = "VinaLab Light $Version"
 $Shortcut.Save()
 
-Write-Host "VinaLab $Version instalado em $InstallRoot"
+Write-Host "VinaLab Light $Version instalado em $InstallRoot"
 Write-Host "Atalho criado em $ShortcutPath"

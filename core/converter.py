@@ -27,6 +27,8 @@ from core.native_tools import find_obabel_executable, native_tool_env
 
 logger = logging.getLogger(__name__)
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0
+# Physiological pH used when Open Babel protonates a ligand (obabel -p 7.4).
+LIGAND_PROTONATION_PH = 7.4
 
 
 @dataclass(frozen=True)
@@ -108,6 +110,8 @@ class FileConverter:
                 False, output_path, "", f"RDKit ou Meeko indisponíveis: {exc}"
             )
 
+        multi_note = FileConverter._multi_molecule_note(input_path, input_format)
+
         try:
             if input_format == "mol2":
                 mol = Chem.MolFromMol2File(str(input_path), removeHs=False)
@@ -163,6 +167,8 @@ class FileConverter:
             )
             if preparation_note:
                 message = f"{message}\n{preparation_note}"
+            if multi_note:
+                message = f"{message}\n{multi_note}"
             log = FileConverter._geometry_log(
                 message,
                 pre_stats,
@@ -172,6 +178,13 @@ class FileConverter:
         except Exception as exc:  # noqa: BLE001 - RDKit/Meeko failed; try Open Babel fallback
             fallback = FileConverter._convert_ligand_via_obabel(input_path, output_path)
             if fallback.success:
+                if multi_note:
+                    return ConversionResult(
+                        True,
+                        fallback.output_path,
+                        f"{fallback.log}\n{multi_note}",
+                        fallback.errors,
+                    )
                 return fallback
             return ConversionResult(
                 False,
@@ -215,6 +228,29 @@ class FileConverter:
             output_path,
             (result.log or "") + "\nLigante convertido com Open Babel (fallback).",
             result.errors,
+        )
+
+    @staticmethod
+    def _multi_molecule_note(input_path: Path, input_format: str) -> str:
+        """Warn when a MOL2/SDF holds several molecules; only the first is converted.
+
+        RDKit and Open Babel both read a single record here, so a multi-molecule
+        library would otherwise be silently truncated to its first entry.
+        """
+        if input_format not in {"mol2", "sdf"}:
+            return ""
+        marker = "@<TRIPOS>MOLECULE" if input_format == "mol2" else "$$$$"
+        try:
+            count = input_path.read_text(encoding="utf-8", errors="replace").count(
+                marker
+            )
+        except OSError:
+            return ""
+        if count <= 1:
+            return ""
+        return (
+            f"Aviso: o arquivo contém {count} moléculas; apenas a primeira foi "
+            "convertida. Separe-as em arquivos individuais para o modo de triagem."
         )
 
     @staticmethod
@@ -591,7 +627,13 @@ class FileConverter:
         input_format = FileConverter._obabel_input_format(input_path)
         try:
             molecule = next(pybel.readfile(input_format, str(input_path)))
-            molecule.OBMol.AddHydrogens()
+            if receptor:
+                molecule.OBMol.AddHydrogens()
+            else:
+                # Peptide/ligand MOL2 files often carry charged termini (N.4, O.co2)
+                # and no explicit hydrogens; pH-aware protonation is what makes them
+                # usable, mirroring `obabel ... -p 7.4`.
+                molecule.OBMol.AddHydrogens(False, True, LIGAND_PROTONATION_PH)
             options = {"r": True} if receptor else {}
             writer = pybel.Outputfile(
                 "pdbqt", str(output_path), overwrite=True, opt=options
@@ -661,7 +703,9 @@ class FileConverter:
         if receptor:
             command.append("-xr")
         else:
-            command.extend(["-h", "--partialcharge", "gasteiger"])
+            command.extend(
+                ["-p", str(LIGAND_PROTONATION_PH), "--partialcharge", "gasteiger"]
+            )
         try:
             FileConverter._remove_stale_output(output_path)
             completed = subprocess.run(

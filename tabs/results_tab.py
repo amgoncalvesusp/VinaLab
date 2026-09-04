@@ -86,6 +86,10 @@ from tabs.results_view import (
 logger = logging.getLogger(__name__)
 
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0
+# Step buttons (20px) plus border/padding drawn by ui/style.qss around spin text.
+SPIN_CHROME_PX = 56
+# Menu arrow plus border/padding drawn around a QToolButton label.
+MENU_BUTTON_CHROME_PX = 44
 
 
 class ResultsTab(QWidget):
@@ -300,7 +304,9 @@ class ResultsTab(QWidget):
     def _build_ui(self) -> None:
         """Build the results tab layout."""
         layout = QVBoxLayout(self)
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Interactive)
+        header.setStretchLastSection(True)
         self.table.setSortingEnabled(False)
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -588,6 +594,7 @@ class ResultsTab(QWidget):
                         continue
                 item.setBackground(background)
                 self.table.setItem(row_index, column_index, item)
+        self.table.resizeColumnsToContents()
         self._rendering_table = False
 
     def _update_chart(self) -> None:
@@ -2031,6 +2038,13 @@ class ResultsTab(QWidget):
             self.scoring_filter_button.setText(f"Scoring: {next(iter(selected))}")
         else:
             self.scoring_filter_button.setText(f"Scoring: {len(selected)} selected")
+        # QToolButton also draws a menu arrow; without this the label was clipped.
+        self.scoring_filter_button.setMinimumWidth(
+            self.scoring_filter_button.fontMetrics().horizontalAdvance(
+                self.scoring_filter_button.text()
+            )
+            + MENU_BUTTON_CHROME_PX
+        )
 
     def _row_id(self, row: dict) -> str:
         """Return a stable sidecar key for a result row."""
@@ -2074,7 +2088,11 @@ class ResultsTab(QWidget):
         spin.setDecimals(2)
         spin.setSingleStep(0.5)
         spin.setValue(value)
-        spin.setMinimumWidth(72)
+        # The stylesheet adds 20px step buttons plus padding on top of the text,
+        # so the natural hint (and the old 72px floor) clipped values like -9999,00.
+        spin.setMinimumWidth(
+            spin.fontMetrics().horizontalAdvance("-9999,00") + SPIN_CHROME_PX
+        )
         spin.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         return spin
 
