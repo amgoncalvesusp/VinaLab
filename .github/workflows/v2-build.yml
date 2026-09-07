@@ -1,0 +1,86 @@
+name: VinaLab 2.0 Manual Build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, ubuntu-22.04]
+    defaults:
+      run:
+        working-directory: VinaLab_2.0
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Linux native dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libnss3 libxkbcommon-x11-0 libxcb-cursor0 libasound2
+      - uses: conda-incubator/setup-miniconda@v3
+        if: runner.os == 'Linux'
+        with:
+          activate-environment: vinalab-native
+          python-version: '3.11'
+          miniforge-version: latest
+      - name: Pinned Linux native engines
+        if: runner.os == 'Linux'
+        shell: bash -el {0}
+        run: |
+          conda install --yes --override-channels -c conda-forge vina=1.2.7 xtb=6.7.1
+          vina --version
+          xtb --version
+          echo "$CONDA_PREFIX/bin" >> "$GITHUB_PATH"
+      - name: Install actual v2 project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install '.[dev,build]'
+          python packaging/build_support.py
+      - name: Require native Vina regression engine
+        shell: python {0}
+        run: |
+          import os
+          from pathlib import Path
+          import shutil
+
+          if os.name == "nt":
+              engine = Path("tools/vina/vina_1.2.7_win.exe").resolve()
+          else:
+              native = shutil.which("vina")
+              if native is None:
+                  raise RuntimeError("Native Vina is required for regression tests")
+              engine = Path(native)
+          if not engine.is_file():
+              raise RuntimeError(f"Missing Vina regression engine: {engine}")
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as output:
+              output.write(f"VINALAB_TEST_VINA={engine}\n")
+      - name: Tests
+        run: python -m pytest tests -q
+      - name: Build wheel and sdist
+        run: python -m build
+      - name: Freeze native application
+        run: python -m PyInstaller --clean --noconfirm vinalab.spec
+      - name: Windows frozen runtime and real service checks
+        if: runner.os == 'Windows'
+        run: python packaging/verify_frozen.py --executable dist/VinaLab_2.0/VinaLab_2.0.exe
+      - name: Linux frozen runtime and real service checks
+        if: runner.os == 'Linux'
+        run: python packaging/verify_frozen.py --executable dist/VinaLab_2.0/VinaLab_2.0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vinalab-v2-${{ runner.os }}
+          path: |
+            VinaLab_2.0/dist/
+            VinaLab_2.0/artifacts/
+          if-no-files-found: error

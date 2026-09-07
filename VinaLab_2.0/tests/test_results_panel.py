@@ -6,6 +6,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication, QTableWidget
+
 from vinalab_core.docking.vina_results import VinaPoseResult
 
 

@@ -2,6 +2,16 @@ from __future__ import annotations
 
 import importlib
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def windows_platform(monkeypatch):
+    from vinalab_core.tools import tool_locator
+
+    monkeypatch.setattr(tool_locator, "os", SimpleNamespace(name="nt"))
 
 
 def _locator_type():

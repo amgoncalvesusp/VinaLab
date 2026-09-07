@@ -6,6 +6,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication, QDoubleSpinBox
+
 from vinalab_core.docking.search_box import SearchBox
 
 

@@ -1,0 +1,4 @@
+# Preserve the exact upstream bytes verified by SHA-256 on every platform.
+three.module.js -text
+OrbitControls.js -text
+LICENSE -text

@@ -5,11 +5,20 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from vinalab_core.prepare.element_router import ElementRoute, ElementRouter
 from vinalab_core.prepare.pdbqt_validator import PdbqtValidator
 from vinalab_core.scoring.registry import ScoringPlan, ScoringRegistry
+from vinalab_ui.widgets.conversion_panel import ConversionPanel
 
 
 class LigandInspector(QWidget):
@@ -40,7 +49,11 @@ class LigandInspector(QWidget):
         self.status.setObjectName("ligandRouteStatus")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
+        self.conversion = ConversionPanel("ligand", self)
+        layout.addWidget(self.conversion)
+        layout.addStretch()
         self.browse_button.clicked.connect(self._browse)
+        self.path_input.editingFinished.connect(lambda: self._inspect_safely(self.path_input.text()))
 
     def inspect_path(self, path: str | Path) -> ElementRoute:
         ligand_path = Path(path)
@@ -57,7 +70,7 @@ class LigandInspector(QWidget):
             availability = "available" if xtb.available else f"not configured ({xtb.reason})"
             self.status.setText(
                 "Boron detected. AutoDock Vina scoring is disabled for this ligand; "
-                f"use xTB/PM6 exotic rescoring with a compatible pose-generation plan. xTB is {availability}."
+                f"import externally generated poses for xTB interaction scoring. xTB is {availability}."
             )
         elif route.requires_exotic_scoring:
             self.status.setText(
@@ -72,9 +85,18 @@ class LigandInspector(QWidget):
         self.route_selected.emit(route)
         return route
 
+    def _inspect_safely(self, path):
+        try:
+            self.inspect_path(path)
+        except (OSError, UnicodeError, ValueError) as error:
+            self.route = None
+            self.scoring_plan = None
+            self.status.setText(f"Ligand not loaded: {error}")
+
     def _browse(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self, "Select ligand PDBQT", self.path_input.text(), "PDBQT files (*.pdbqt);;All files (*)"
         )
         if path:
-            self.inspect_path(path)
+            self.path_input.setText(path)
+            self._inspect_safely(path)

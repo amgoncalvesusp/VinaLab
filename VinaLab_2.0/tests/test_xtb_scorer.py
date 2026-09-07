@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import os
 from pathlib import Path
 
 from vinalab_core.docking.vina_runner import VinaProcessResult
@@ -21,9 +22,10 @@ def test_xtb_scorer_is_available_as_the_exotic_rescoring_plugin() -> None:
 def test_xtb_scorer_builds_a_solvated_gfn2_single_point_command(tmp_path: Path) -> None:
     scorer_type = _scorer_type()
     assert scorer_type is not None
-    executable = tmp_path / "tools" / "xtb" / "xtb.exe"
+    executable = tmp_path / "tools" / "xtb" / ("xtb.exe" if os.name == "nt" else "xtb")
     executable.parent.mkdir(parents=True)
     executable.write_text("placeholder", encoding="utf-8")
+    executable.chmod(0o755)
     structure = tmp_path / "complex.xyz"
     structure.write_text("1\ncomment\nB 0 0 0\n", encoding="utf-8")
     scorer = scorer_type(tmp_path)
@@ -51,9 +53,10 @@ def test_xtb_scorer_parses_total_energy_in_hartree() -> None:
 def test_xtb_scorer_executes_and_converts_hartree_to_kcal_per_mol(tmp_path: Path) -> None:
     scorer_type = _scorer_type()
     assert scorer_type is not None
-    executable = tmp_path / "tools" / "xtb" / "xtb.exe"
+    executable = tmp_path / "tools" / "xtb" / ("xtb.exe" if os.name == "nt" else "xtb")
     executable.parent.mkdir(parents=True)
     executable.write_text("placeholder", encoding="utf-8")
+    executable.chmod(0o755)
     structure = tmp_path / "complex.xyz"
     structure.write_text("1\ncomment\nB 0 0 0\n", encoding="utf-8")
 
@@ -70,9 +73,10 @@ def test_xtb_scorer_executes_and_converts_hartree_to_kcal_per_mol(tmp_path: Path
 def test_xtb_scorer_runs_in_an_isolated_temporary_working_directory(tmp_path: Path) -> None:
     scorer_type = _scorer_type()
     assert scorer_type is not None
-    executable = tmp_path / "tools" / "xtb" / "xtb.exe"
+    executable = tmp_path / "tools" / "xtb" / ("xtb.exe" if os.name == "nt" else "xtb")
     executable.parent.mkdir(parents=True)
     executable.write_text("placeholder", encoding="utf-8")
+    executable.chmod(0o755)
     structure = tmp_path / "complex.xyz"
     structure.write_text("1\ncomment\nB 0 0 0\n", encoding="utf-8")
     received: dict[str, object] = {}

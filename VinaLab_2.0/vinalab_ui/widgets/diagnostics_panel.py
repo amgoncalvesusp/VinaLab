@@ -24,13 +24,20 @@ class DiagnosticsPanel(QWidget):
 
         xtb_status = QLabel(self)
         xtb_status.setObjectName("xtbStatus")
-        xtb = XtbBundleValidator(project_root).validate()
-        xtb_status.setText(
-            f"Available: {xtb.executable}"
-            if xtb.ready
-            else f"Not available: {'; '.join(xtb.errors)}"
-        )
-        layout.addRow("xTB (standalone)", xtb_status)
+        xtb = ToolLocator(project_root).find("xtb")
+        bundle_root = (Path(project_root) / "tools" / "xtb").resolve()
+        if xtb is None:
+            xtb_status.setText("Not available: xTB binary was not found")
+        elif xtb.resolve().is_relative_to(bundle_root):
+            bundle = XtbBundleValidator(project_root).validate()
+            xtb_status.setText(
+                f"Available: {xtb}"
+                if bundle.ready
+                else f"Not available: {'; '.join(bundle.errors)}"
+            )
+        else:
+            xtb_status.setText(f"Available: {xtb}")
+        layout.addRow("xTB", xtb_status)
 
         gpu_status = QLabel(
             "GPU acceleration is not available with the bundled Vina/xTB engines. "

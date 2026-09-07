@@ -25,9 +25,10 @@ def test_diagnostics_panel_reports_a_bundled_vina_binary(tmp_path: Path) -> None
     QApplication.instance() or QApplication([])
     panel_type = _panel_type()
     assert panel_type is not None
-    binary = tmp_path / "tools" / "vina" / "vina.exe"
+    binary = tmp_path / "tools" / "vina" / ("vina.exe" if os.name == "nt" else "vina")
     binary.parent.mkdir(parents=True)
     binary.write_text("placeholder", encoding="utf-8")
+    binary.chmod(0o755)
 
     panel = panel_type(tmp_path)
     status = panel.findChild(QLabel, "vinaStatus")
@@ -44,8 +45,9 @@ def test_diagnostics_panel_reports_a_ready_standalone_xtb_bundle(tmp_path: Path)
     bundle = tmp_path / "tools" / "xtb"
     (bundle / "bin").mkdir(parents=True)
     (bundle / "LICENSES").mkdir()
-    executable = bundle / "bin" / "xtb.exe"
+    executable = bundle / "bin" / ("xtb.exe" if os.name == "nt" else "xtb")
     executable.write_text("placeholder", encoding="utf-8")
+    executable.chmod(0o755)
     (bundle / "LICENSES" / "COPYING").write_text("LGPL-3.0", encoding="utf-8")
 
     panel = panel_type(tmp_path)
@@ -67,3 +69,32 @@ def test_diagnostics_panel_explains_the_current_cpu_only_engine_capability(tmp_p
     assert status is not None
     assert "CPU" in status.text()
     assert "GPU" in status.text()
+
+
+def test_diagnostics_panel_accepts_xtb_on_path_without_a_bundle(tmp_path, monkeypatch):
+    QApplication.instance() or QApplication([])
+    executable = tmp_path / "external" / ("xtb.exe" if os.name == "nt" else "xtb")
+    executable.parent.mkdir()
+    executable.write_text("placeholder", encoding="utf-8")
+    executable.chmod(0o755)
+    monkeypatch.setattr("shutil.which", lambda name: str(executable) if name == "xtb" else None)
+
+    panel = _panel_type()(tmp_path / "installed")
+    status = panel.findChild(QLabel, "xtbStatus")
+
+    assert status.text() == f"Available: {executable}"
+
+
+def test_diagnostics_panel_keeps_bundled_xtb_integrity_checks(tmp_path, monkeypatch):
+    QApplication.instance() or QApplication([])
+    executable = tmp_path / "tools" / "xtb" / ("xtb.exe" if os.name == "nt" else "xtb")
+    executable.parent.mkdir(parents=True)
+    executable.write_text("placeholder", encoding="utf-8")
+    executable.chmod(0o755)
+    monkeypatch.setattr("shutil.which", lambda _: None)
+
+    panel = _panel_type()(tmp_path)
+    status = panel.findChild(QLabel, "xtbStatus")
+
+    assert status.text().startswith("Not available:")
+    assert "LGPL" in status.text()

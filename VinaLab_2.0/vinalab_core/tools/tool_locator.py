@@ -16,13 +16,13 @@ class ToolLocator:
 
     def find(self, name: str) -> Path | None:
         for candidate in self._bundled_candidates(name):
-            if candidate.is_file():
+            if self._usable(candidate):
                 return candidate
         for candidate in self._conda_candidates(name):
-            if candidate.is_file():
+            if self._usable(candidate):
                 return candidate
         path_match = shutil.which(name)
-        if path_match:
+        if path_match and self._usable(Path(path_match)):
             return Path(path_match)
         if os.name == "nt":
             executable_match = shutil.which(f"{name}.exe")
@@ -30,8 +30,15 @@ class ToolLocator:
                 return Path(executable_match)
         return None
 
+    @staticmethod
+    def _usable(candidate: Path) -> bool:
+        return candidate.is_file() and (
+            os.name == "nt"
+            or (candidate.suffix.lower() != ".exe" and os.access(candidate, os.X_OK))
+        )
+
     def _bundled_candidates(self, name: str) -> tuple[Path, ...]:
-        suffixes = (".exe", "") if os.name == "nt" else ("", ".exe")
+        suffixes = (".exe", "") if os.name == "nt" else ("",)
         tool_directory = self.project_root / "tools" / name
         exact = tuple(tool_directory / f"{name}{suffix}" for suffix in suffixes)
         nested_bin = tuple(tool_directory / "bin" / f"{name}{suffix}" for suffix in suffixes)
@@ -41,6 +48,8 @@ class ToolLocator:
     def _conda_candidates(self, name: str) -> tuple[Path, ...]:
         if self.conda_prefix is None:
             return ()
-        suffixes = (".exe", "") if os.name == "nt" else ("", ".exe")
+        suffixes = (".exe", "") if os.name == "nt" else ("",)
         directories = (self.conda_prefix / "Scripts", self.conda_prefix / "bin")
-        return tuple(directory / f"{name}{suffix}" for directory in directories for suffix in suffixes)
+        return tuple(
+            directory / f"{name}{suffix}" for directory in directories for suffix in suffixes
+        )

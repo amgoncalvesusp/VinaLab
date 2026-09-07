@@ -15,11 +15,15 @@ def test_runtime_paths_are_available_for_a_packaged_desktop_application() -> Non
     assert _paths_module() is not None
 
 
-def test_development_runtime_uses_the_source_root_for_resources_and_project_data() -> None:
+def test_development_resources_and_user_project_data_are_separate(monkeypatch, tmp_path) -> None:
+    import sys
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
     module = _paths_module()
     assert module is not None
 
     source_root = Path(__file__).resolve().parents[1]
 
     assert module.resource_root() == source_root
-    assert module.default_project_root() == source_root
+    assert module.default_project_root() == tmp_path / "VinaLab 2.0"

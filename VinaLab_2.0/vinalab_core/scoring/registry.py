@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from vinalab_core.prepare.element_router import EXOTIC_ELEMENTS, METALS
+from vinalab_core.prepare.element_router import AUTODOCK_TYPE_ELEMENTS, VINA_ATOM_TYPES
 from vinalab_core.tools.tool_locator import ToolLocator
 
 
@@ -37,10 +37,13 @@ class ScoringRegistry:
         self.locator = ToolLocator(project_root)
 
     def plan_for_elements(self, elements: frozenset[str]) -> ScoringPlan:
-        exotic = elements.intersection(EXOTIC_ELEMENTS | METALS)
+        supported = frozenset(AUTODOCK_TYPE_ELEMENTS.get(atom_type, atom_type) for atom_type in VINA_ATOM_TYPES)
+        unsupported = elements.difference(supported)
+        vina_available = self.locator.find("vina") is not None
+        vina_reason = "" if vina_available else "Vina binary is not configured"
         xtb_available = self.locator.find("xtb") is not None
         xtb_reason = "" if xtb_available else "xTB binary is not configured"
-        if exotic:
+        if unsupported:
             return ScoringPlan(
                 recommended_key="xtb_gfn2",
                 options=(
@@ -48,21 +51,24 @@ class ScoringRegistry:
                         "vina",
                         "AutoDock Vina",
                         compatible=False,
-                        available=self.locator.find("vina") is not None,
-                        reason=f"Unsupported exotic elements: {', '.join(sorted(exotic))}",
+                        available=vina_available,
+                        reason=f"Unsupported Vina elements: {', '.join(sorted(unsupported))}",
                     ),
-                    ScorerOption("xtb_gfn2", "xTB GFN2 + ALPB", True, xtb_available, xtb_reason),
-                    ScorerOption("xtb_gfnff", "xTB GFN-FF + ALPB", True, xtb_available, xtb_reason),
+                    ScorerOption("vinardo", "Vinardo", False, vina_available,
+                        f"Unsupported Vina elements: {', '.join(sorted(unsupported))}"),
+                    ScorerOption("xtb_gfn2", "xTB GFN2 + ALPB water frozen interaction energy", True, xtb_available, xtb_reason),
+                    ScorerOption("xtb_gfnff", "xTB GFN-FF + ALPB water frozen interaction energy", True, xtb_available, xtb_reason),
                     ScorerOption("pm6_sqm", "PM6/SQM2.20", True, False, "MOPAC/Cuby plugin is not configured"),
-                    ScorerOption("uff_ie", "RDKit UFF interaction energy", True, True),
+                    ScorerOption("uff_ie", "RDKit UFF interaction energy", True, False, "Validated topology-aware UFF interaction implementation unavailable"),
                 ),
             )
         return ScoringPlan(
             recommended_key="vina",
             options=(
-                ScorerOption("vina", "AutoDock Vina", True, self.locator.find("vina") is not None),
-                ScorerOption("vinardo", "Vinardo", True, False, "Vinardo plugin is not configured"),
-                ScorerOption("xtb_gfn2", "xTB GFN2 + ALPB", True, xtb_available, xtb_reason),
-                ScorerOption("uff_ie", "RDKit UFF interaction energy", True, True),
+                ScorerOption("vina", "AutoDock Vina", True, vina_available, vina_reason),
+                ScorerOption("vinardo", "Vinardo", True, vina_available, vina_reason),
+                ScorerOption("xtb_gfn2", "xTB GFN2 + ALPB water frozen interaction energy", True, xtb_available, xtb_reason),
+                ScorerOption("xtb_gfnff", "xTB GFN-FF + ALPB water frozen interaction energy", True, xtb_available, xtb_reason),
+                ScorerOption("uff_ie", "RDKit UFF interaction energy", True, False, "Validated topology-aware UFF interaction implementation unavailable"),
             ),
         )

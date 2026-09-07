@@ -20,6 +20,7 @@ class DockingWorker(QThread):
 
     completed = Signal(object)
     failed = Signal(str)
+    process_finished = Signal(object)
 
     def __init__(
         self,
@@ -43,11 +44,16 @@ class DockingWorker(QThread):
                 cpu_threads=self.request.cpu_threads,
                 exhaustiveness=self.request.exhaustiveness,
                 seed=self.request.seed,
+                scoring=self.request.scoring,
+                num_modes=self.request.num_modes,
             )
-        except Exception as error:  # pragma: no cover - Qt signal boundary
+        except Exception as error:  # pragma: no cover  # noqa: BLE001 - Native failures use Qt signals.
             self.failed.emit(str(error))
             return
         if result.ok:
+            self.process_finished.emit(result.process)
             self.completed.emit(result)
         else:
-            self.failed.emit(result.process.stderr.strip() or "Vina exited without a result")
+            self.process_finished.emit(result.process)
+            self.failed.emit("\n".join((*result.errors, result.process.stderr.strip()))
+                             .strip() or "Vina exited without a result")

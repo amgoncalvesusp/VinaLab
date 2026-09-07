@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import importlib
+import os
 from pathlib import Path
+
+import pytest
 
 
 def _validator_type():
@@ -21,13 +24,15 @@ def test_xtb_bundle_validator_accepts_executable_and_license_bundle(tmp_path: Pa
     assert validator_type is not None
     bundle = tmp_path / "tools" / "xtb"
     (bundle / "LICENSES").mkdir(parents=True)
-    (bundle / "xtb.exe").write_text("placeholder", encoding="utf-8")
+    executable = bundle / ("xtb.exe" if os.name == "nt" else "xtb")
+    executable.write_text("placeholder", encoding="utf-8")
+    executable.chmod(0o755)
     (bundle / "LICENSES" / "COPYING").write_text("LGPL-3.0", encoding="utf-8")
 
     status = validator_type(tmp_path).validate()
 
     assert status.ready
-    assert status.executable == bundle / "xtb.exe"
+    assert status.executable == executable
 
 
 def test_xtb_bundle_validator_accepts_official_bin_layout(tmp_path: Path) -> None:
@@ -36,15 +41,18 @@ def test_xtb_bundle_validator_accepts_official_bin_layout(tmp_path: Path) -> Non
     bundle = tmp_path / "tools" / "xtb"
     (bundle / "bin").mkdir(parents=True)
     (bundle / "LICENSES").mkdir()
-    (bundle / "bin" / "xtb.exe").write_text("placeholder", encoding="utf-8")
+    executable = bundle / "bin" / ("xtb.exe" if os.name == "nt" else "xtb")
+    executable.write_text("placeholder", encoding="utf-8")
+    executable.chmod(0o755)
     (bundle / "LICENSES" / "COPYING").write_text("LGPL-3.0", encoding="utf-8")
 
     status = validator_type(tmp_path).validate()
 
     assert status.ready
-    assert status.executable == bundle / "bin" / "xtb.exe"
+    assert status.executable == executable
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Checked-in xTB bundle contains Windows binaries only")
 def test_checked_in_standalone_xtb_bundle_is_ready() -> None:
     validator_type = _validator_type()
     assert validator_type is not None

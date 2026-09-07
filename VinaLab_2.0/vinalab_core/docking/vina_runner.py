@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import os
 import subprocess
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from math import isfinite
 from pathlib import Path
-from typing import Mapping, Sequence
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,7 +38,7 @@ class VinaRunner:
             raise ValueError("command must not be empty")
         if cpu_threads < 1:
             raise ValueError("cpu_threads must be at least one")
-        if timeout_seconds <= 0:
+        if not isfinite(timeout_seconds) or timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
         process_environment = os.environ.copy()
         process_environment.update(

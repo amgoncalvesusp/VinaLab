@@ -1,17 +1,20 @@
 #define AppName "VinaLab 2.0"
-#define AppVersion "2.0.0"
+#define AppVersion "2.0.1"
 #define AppPublisher "VinaLab"
 #define AppExeName "VinaLab_2.0.exe"
+#define ProjectRoot ExtractFileDir(ExtractFileDir(RemoveBackslashUnlessRoot(SourcePath)))
 
 [Setup]
 AppId={{A2C587BC-6CB8-4A4B-B6D5-4B96A4607A48}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
-DefaultDirName={autopf}\VinaLab 2.0
+DefaultDirName={localappdata}\Programs\VinaLab 2.0
+PrivilegesRequired=lowest
+PrivilegesRequiredOverridesAllowed=dialog
 DefaultGroupName={#AppName}
-OutputDir=..\..\release\windows
-OutputBaseFilename=VinaLab_2.0_Setup_x64
+OutputDir={#ProjectRoot}\release\windows
+OutputBaseFilename=VinaLab_2.0.1_Setup_x64
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 Compression=lzma2
@@ -19,7 +22,7 @@ SolidCompression=yes
 WizardStyle=modern
 
 [Files]
-Source: "..\..\dist\VinaLab_2.0\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#ProjectRoot}\dist\VinaLab_2.0\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"

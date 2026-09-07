@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from math import isfinite
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,12 +29,17 @@ class VinaResultsParser:
             match = self._ROW.match(line)
             if match is None:
                 continue
-            poses.append(
-                VinaPoseResult(
-                    mode=int(match["mode"]),
-                    affinity=float(match["affinity"]),
-                    rmsd_lb=float(match["rmsd_lb"]),
-                    rmsd_ub=float(match["rmsd_ub"]),
-                )
+            pose = VinaPoseResult(
+                mode=int(match["mode"]),
+                affinity=float(match["affinity"]),
+                rmsd_lb=float(match["rmsd_lb"]),
+                rmsd_ub=float(match["rmsd_ub"]),
             )
+            if (
+                pose.mode != len(poses) + 1
+                or not all(isfinite(v) for v in (pose.affinity, pose.rmsd_lb, pose.rmsd_ub))
+                or not 0 <= pose.rmsd_lb <= pose.rmsd_ub
+            ):
+                return ()
+            poses.append(pose)
         return tuple(poses)

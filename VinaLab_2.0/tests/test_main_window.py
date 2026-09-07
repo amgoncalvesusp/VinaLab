@@ -9,14 +9,14 @@ from time import monotonic, sleep
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication, QTabWidget
+
 from vinalab_core.docking.docking_service import DockingRunResult
-from vinalab_core.docking.vina_runner import VinaProcessResult
 from vinalab_core.docking.vina_results import VinaPoseResult
+from vinalab_core.docking.vina_runner import VinaProcessResult
 from vinalab_core.io.project_store import ProjectStore
 from vinalab_ui.widgets.diagnostics_panel import DiagnosticsPanel
 from vinalab_ui.widgets.docking_panel import DockingPanel
 from vinalab_ui.widgets.ligand_inspector import LigandInspector
-from vinalab_ui.widgets.receptor_selector import ReceptorSelector
 from vinalab_ui.widgets.results_panel import ResultsPanel
 from vinalab_ui.widgets.scoring_panel import ScoringPanel
 from vinalab_ui.widgets.search_box_editor import SearchBoxEditor
@@ -196,8 +196,8 @@ def test_main_window_runs_a_docking_request_and_updates_results(tmp_path: Path) 
 
     receptor = tmp_path / "receptor.pdbqt"
     ligand = tmp_path / "ligand.pdbqt"
-    receptor.write_text("RECEPTOR", encoding="utf-8")
-    ligand.write_text("LIGAND", encoding="utf-8")
+    receptor.write_text("ATOM      1  C1  LIG     1       0.000   0.000   0.000  0.00  0.00     0.000 C\n", encoding="utf-8")
+    ligand.write_text("ROOT\nATOM      1  C1  LIG     1       0.000   0.000   0.000  0.00  0.00     0.000 C\nENDROOT\nTORSDOF 0\n", encoding="utf-8")
     main_window_type = _main_window_type()
     assert main_window_type is not None
     window = main_window_type(project_root=tmp_path, docking_service=StubDockingService())
@@ -231,8 +231,8 @@ def test_main_window_starts_docking_without_blocking_the_ui_thread(tmp_path: Pat
 
     receptor = tmp_path / "receptor.pdbqt"
     ligand = tmp_path / "ligand.pdbqt"
-    receptor.write_text("RECEPTOR", encoding="utf-8")
-    ligand.write_text("LIGAND", encoding="utf-8")
+    receptor.write_text("ATOM      1  C1  LIG     1       0.000   0.000   0.000  0.00  0.00     0.000 C\n", encoding="utf-8")
+    ligand.write_text("ROOT\nATOM      1  C1  LIG     1       0.000   0.000   0.000  0.00  0.00     0.000 C\nENDROOT\nTORSDOF 0\n", encoding="utf-8")
     main_window_type = _main_window_type()
     assert main_window_type is not None
     window = main_window_type(project_root=tmp_path, docking_service=SlowDockingService())
@@ -264,8 +264,8 @@ def test_main_window_persists_completed_vina_poses_in_the_project_database(tmp_p
 
     receptor = tmp_path / "receptor.pdbqt"
     ligand = tmp_path / "ligand.pdbqt"
-    receptor.write_text("RECEPTOR", encoding="utf-8")
-    ligand.write_text("LIGAND", encoding="utf-8")
+    receptor.write_text("ATOM      1  C1  LIG     1       0.000   0.000   0.000  0.00  0.00     0.000 C\n", encoding="utf-8")
+    ligand.write_text("ROOT\nATOM      1  C1  LIG     1       0.000   0.000   0.000  0.00  0.00     0.000 C\nENDROOT\nTORSDOF 0\n", encoding="utf-8")
     main_window_type = _main_window_type()
     assert main_window_type is not None
     window = main_window_type(project_root=tmp_path, docking_service=StubDockingService())

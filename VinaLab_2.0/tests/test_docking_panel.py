@@ -8,6 +8,7 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication, QLineEdit, QPushButton
+
 from vinalab_core.docking.search_box import SearchBox
 from vinalab_core.prepare.element_router import ElementRouter
 
@@ -44,8 +45,8 @@ def test_docking_panel_only_enables_run_when_vina_and_both_pdbqt_inputs_exist(tm
 
     receptor = tmp_path / "receptor.pdbqt"
     ligand = tmp_path / "ligand.pdbqt"
-    receptor.write_text("RECEPTOR", encoding="utf-8")
-    ligand.write_text("LIGAND", encoding="utf-8")
+    receptor.write_text("ATOM      1  C1  LIG     1       0.000   0.000   0.000  0.00  0.00     0.000 C\n", encoding="utf-8")
+    ligand.write_text("ROOT\nATOM      1  C1  LIG     1       0.000   0.000   0.000  0.00  0.00     0.000 C\nENDROOT\nTORSDOF 0\n", encoding="utf-8")
     panel.set_inputs(receptor, ligand)
 
     assert run_button.isEnabled()
@@ -85,8 +86,8 @@ def test_docking_panel_emits_the_visible_run_configuration(tmp_path: Path) -> No
     assert panel_type is not None
     receptor = tmp_path / "receptor.pdbqt"
     ligand = tmp_path / "ligand.pdbqt"
-    receptor.write_text("RECEPTOR", encoding="utf-8")
-    ligand.write_text("LIGAND", encoding="utf-8")
+    receptor.write_text("ATOM      1  C1  LIG     1       0.000   0.000   0.000  0.00  0.00     0.000 C\n", encoding="utf-8")
+    ligand.write_text("ROOT\nATOM      1  C1  LIG     1       0.000   0.000   0.000  0.00  0.00     0.000 C\nENDROOT\nTORSDOF 0\n", encoding="utf-8")
     panel = panel_type(
         SearchBox(
             center=(1.0, 2.0, 3.0),

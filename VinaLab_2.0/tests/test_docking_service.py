@@ -23,12 +23,18 @@ def test_docking_service_builds_runs_and_parses_vina_poses(tmp_path: Path) -> No
     service_type = _service_type()
     assert service_type is not None
 
+    atom = "ATOM      1  C1  LIG A   1       1.000   2.000   3.000  0.00  0.00     0.100 C\n"
+    ligand = "ROOT\n" + atom + "ENDROOT\nTORSDOF 0\n"
+    (tmp_path / "receptor.pdbqt").write_text(atom)
+    (tmp_path / "ligand.pdbqt").write_text(ligand)
+
     class StubRunner:
         def __init__(self) -> None:
             self.command = ()
 
         def execute(self, command, **_kwargs):
             self.command = tuple(command)
+            Path(command[command.index("--out") + 1]).write_text("MODEL 1\n" + ligand + "ENDMDL\n")
             return VinaProcessResult(
                 command=self.command,
                 returncode=0,

@@ -4,9 +4,12 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$PROJECT_ROOT"
 
-python3 -m venv .venv
+PYTHON="${PYTHON:-python3}"
+"$PYTHON" -c 'import sys; assert sys.version_info >= (3, 11), "Python 3.11+ required"'
+"$PYTHON" -m venv .venv
 .venv/bin/python -m pip install --upgrade pip
-.venv/bin/python -m pip install -e ".[ui]"
+.venv/bin/python -m pip install -e "$PROJECT_ROOT"
+.venv/bin/python "$PROJECT_ROOT/packaging/build_support.py"
 
 cat <<'EOF'
 

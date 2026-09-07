@@ -7,6 +7,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+from vinalab_core.runtime_paths import resource_root
 from vinalab_core.tools.tool_locator import ToolLocator
 
 
@@ -15,7 +16,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="vinalab-cli", description="VinaLab 2.0 headless tools")
     subcommands = parser.add_subparsers(dest="command", required=True)
     diagnostics = subcommands.add_parser("diagnostics", help="report configured native tools")
-    diagnostics.add_argument("--project-root", type=Path, default=Path.cwd())
+    diagnostics.add_argument("--project-root", type=Path, default=resource_root())
     arguments = parser.parse_args(argv)
     if arguments.command == "diagnostics":
         vina = ToolLocator(arguments.project_root).find("vina")

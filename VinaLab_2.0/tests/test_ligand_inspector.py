@@ -7,8 +7,8 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QLineEdit, QPushButton, QLabel
 import pytest
+from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QPushButton
 
 
 def _inspector_type():
@@ -60,7 +60,10 @@ def test_ligand_inspector_emits_the_selected_ligand_path(tmp_path: Path) -> None
     assert selected == [ligand]
 
 
-def test_ligand_inspector_reports_when_the_recommended_xtb_route_is_not_configured(tmp_path: Path) -> None:
+def test_ligand_inspector_reports_when_the_recommended_xtb_route_is_not_configured(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr("shutil.which", lambda _: None)
     QApplication.instance() or QApplication([])
     inspector_type = _inspector_type()
     assert inspector_type is not None

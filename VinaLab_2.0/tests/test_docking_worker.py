@@ -8,8 +8,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from vinalab_core.docking.docking_service import DockingRunResult
 from vinalab_core.docking.search_box import SearchBox
-from vinalab_core.docking.vina_runner import VinaProcessResult
 from vinalab_core.docking.vina_results import VinaPoseResult
+from vinalab_core.docking.vina_runner import VinaProcessResult
 from vinalab_ui.widgets.docking_panel import DockingRequest
 
 
