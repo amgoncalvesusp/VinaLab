@@ -583,6 +583,12 @@ class ResultsTab(QWidget):
                         float(value) if key != "pose_rank" else int(value),
                     )
                 if key == "reference_validation":
+                    item.setText({
+                        "Pass": "Aprovada" if self.lang == "pt" else "Pass",
+                        "Fail": "Reprovada" if self.lang == "pt" else "Fail",
+                        "Not comparable": "RMSD indisponivel" if self.lang == "pt" else "RMSD unavailable",
+                    }.get(str(value), str(value)))
+                    item.setToolTip(str(row.get("reference_rmsd_status", "")))
                     validation_color = {
                         "Pass": QColor("#d8f0df"),
                         "Fail": QColor("#f6d6d6"),
@@ -861,7 +867,8 @@ class ResultsTab(QWidget):
             return
         try:
             self.box_preview_view.setHtml(
-                build_box_preview_html(self.current_receptor_path, self.current_box)
+                build_box_preview_html(self.current_receptor_path, self.current_box, self.lang),
+                QUrl.fromLocalFile(str(Path(__file__).resolve().parents[1] / 'ui' / 'box.html')),
             )
             self._box_preview_ready = True
         except Exception as exc:  # noqa: BLE001 - preview is non-critical
@@ -899,7 +906,8 @@ class ResultsTab(QWidget):
             self._populate_interaction_table(interactions)
             if self.preview_view is not None:
                 self.preview_view.setHtml(
-                    build_pose_view_html(row, receptor_pdb, pose_pdb)
+                    build_pose_view_html(row, receptor_pdb, pose_pdb),
+                    QUrl.fromLocalFile(str(Path(__file__).resolve().parents[1] / 'ui' / 'pose.html')),
                 )
             self.current_preview_row = dict(row)
             self.current_receptor_pdb = receptor_pdb

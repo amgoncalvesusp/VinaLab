@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 import pandas as pd
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QUrl, QThread, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -515,172 +515,51 @@ class ProtocolValidationDialog(QDialog):
         pd.DataFrame(self.validation_rows).to_csv(Path(file_name), index=False)
 
 
-class ExportComplexDialog(QDialog):
-    """Dialog for exporting selected or multiple docked poses."""
 
-    def __init__(
-        self, results: list[dict], parent: QWidget | None = None, lang: str = "pt"
-    ) -> None:
-        """Initialize export controls."""
+class ExportWorker(QThread):
+    progress = Signal(int)
+    completed = Signal(int, str, bool)
+
+    def __init__(self, rows, output_dir, export_format, include_complex, lang, parent=None):
         super().__init__(parent)
-        self.results = list(results)
+        self.rows = [dict(row) for row in rows]
+        self.output_dir = output_dir
+        self.export_format = export_format
+        self.include_complex = include_complex
         self.lang = lang
-        self.setWindowTitle(I18n.get("export_complex", self.lang))
-        self.selected_radio = QRadioButton(I18n.get("rd_export_selected", self.lang))
-        self.all_radio = QRadioButton(I18n.get("rd_export_all", self.lang))
-        self.selected_radio.setChecked(True)
-        self.mode_group = QButtonGroup(self)
-        self.mode_group.addButton(self.selected_radio)
-        self.mode_group.addButton(self.all_radio)
-        self.top_n_spin = QSpinBox()
-        self.top_n_spin.setRange(1, 999)
-        self.top_n_spin.setValue(1)
-        self.format_combo = QComboBox()
-        self.format_combo.addItems(["pdbqt", "pdb", "mol2"])
-        self.complex_checkbox = QCheckBox(I18n.get("rd_export_complex_pdb", self.lang))
-        self.complex_checkbox.setChecked(True)
-        self.folder_edit = QLineEdit()
-        self.progress_bar = QProgressBar()
-        self.export_button = QPushButton(I18n.get("rd_export_btn", self.lang))
-        self._build_ui()
 
-    def _build_ui(self) -> None:
-        """Build the dialog layout."""
-        layout = QVBoxLayout(self)
-        layout.addWidget(self.selected_radio)
-        layout.addWidget(self.all_radio)
-
-        top_n_row = QHBoxLayout()
-        top_n_row.addWidget(QLabel(I18n.get("rd_topn_per_ligand", self.lang)))
-        top_n_row.addWidget(self.top_n_spin)
-        layout.addLayout(top_n_row)
-
-        format_row = QHBoxLayout()
-        format_row.addWidget(QLabel(I18n.get("rd_format_label", self.lang)))
-        format_row.addWidget(self.format_combo)
-        layout.addLayout(format_row)
-        layout.addWidget(self.complex_checkbox)
-
-        folder_row = QHBoxLayout()
-        folder_row.addWidget(self.folder_edit)
-        browse_button = QPushButton(I18n.get("browse_button", self.lang))
-        browse_button.clicked.connect(self._pick_folder)
-        folder_row.addWidget(browse_button)
-        layout.addLayout(folder_row)
-
-        self.progress_bar.setValue(0)
-        layout.addWidget(self.progress_bar)
-
-        button_box = QDialogButtonBox(Qt.Horizontal)
-        button_box.addButton(self.export_button, QDialogButtonBox.AcceptRole)
-        button_box.addButton(QDialogButtonBox.Cancel)
-        button_box.rejected.connect(self.reject)
-        self.export_button.clicked.connect(self._export)
-        layout.addWidget(button_box)
-
-        self.all_radio.toggled.connect(self.top_n_spin.setVisible)
-        self.top_n_spin.setVisible(False)
-
-    def _pick_folder(self) -> None:
-        """Select an output folder."""
-        folder = QFileDialog.getExistingDirectory(
-            self, I18n.get("select_output_dir", self.lang)
-        )
-        if folder:
-            self.folder_edit.setText(folder)
-
-    def _export(self) -> None:
-        """Run the export workflow."""
-        output_folder = self.folder_edit.text().strip()
-        title = I18n.get("export_complex", self.lang)
-        if not output_folder:
-            QMessageBox.warning(
-                self, title, I18n.get("rd_choose_output_folder", self.lang)
-            )
-            return
-        output_dir = Path(output_folder)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        export_format = self.format_combo.currentText()
-        rows = self._rows_to_export()
-        if not rows:
-            QMessageBox.warning(self, title, I18n.get("rd_no_pose_selected", self.lang))
-            return
-        if export_format in {"pdb", "mol2"} and find_obabel_executable() is None:
-            QMessageBox.critical(
-                self, title, I18n.get("rd_obabel_missing_export", self.lang)
-            )
-            return
-
+    def run(self):
         exported = 0
-        self.export_button.setEnabled(False)
+        error = ""
         try:
-            for index, row in enumerate(rows, start=1):
-                self._export_row(row, output_dir, export_format)
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+            for row in self.rows:
+                if self.isInterruptionRequested():
+                    break
+                with tempfile.TemporaryDirectory(prefix="vinalab-export-") as directory:
+                    staging = Path(directory)
+                    self._export_row(row, staging, self.export_format)
+                    if self.isInterruptionRequested():
+                        break
+                    for path in staging.iterdir():
+                        # Exclusive creation preserves existing exports, even on races.
+                        with (self.output_dir / path.name).open("xb") as target:
+                            target.write(path.read_bytes())
                 exported += 1
-                self.progress_bar.setValue(int(index / len(rows) * 100))
-                QApplication.processEvents()
-        except Exception as exc:  # noqa: BLE001 - any failure must reach the user
-            # Without this the dialog just sat there with a stalled progress bar
-            # and no message, which reads as a frozen window.
-            QMessageBox.critical(
-                self,
-                title,
-                I18n.get("rd_export_failed", self.lang).format(
-                    exported=exported, exc=exc
-                ),
-            )
-            return
-        finally:
-            self.export_button.setEnabled(True)
-
-        QMessageBox.information(
-            self,
-            title,
-            I18n.get("rd_exported_count", self.lang).format(
-                count=exported, directory=output_dir
-            ),
-        )
-        self.accept()
-
-    def _rows_to_export(self) -> list[dict]:
-        """Resolve the pose rows to export."""
-        if self.selected_radio.isChecked():
-            parent = self.parent()
-            if not hasattr(parent, "_selected_result_row"):
-                return []
-            selected = parent._selected_result_row()
-            return [selected] if selected is not None else []
-
-        top_n = self.top_n_spin.value()
-        rows: list[dict] = []
-        grouped = itertools.groupby(
-            sorted(
-                self.results,
-                key=lambda row: (
-                    row["ligand_name"],
-                    row.get("scoring_function", row.get("scoring_key", "")),
-                    float(row["affinity"]),
-                    int(row["mode"]),
-                ),
-            ),
-            key=lambda row: (
-                row["ligand_name"],
-                row.get("scoring_function", row.get("scoring_key", "")),
-            ),
-        )
-        for _, group_rows in grouped:
-            rows.extend(list(group_rows)[:top_n])
-        return rows
+                self.progress.emit(int(exported / len(self.rows) * 100))
+        except Exception as exc:
+            error = str(exc)
+        self.completed.emit(exported, error, self.isInterruptionRequested())
 
     def _export_row(self, row: dict, output_dir: Path, export_format: str) -> None:
         """Export a single pose row, plus the receptor-pose complex when requested."""
-        pose_basename = f"{safe_export_name(row['ligand_name'])}_pose{int(row['mode'])}"
+        pose_basename = row["_export_name"]
         pose_text = extract_pose_model(
             Path(row["output_file"]), int(row["mode"]), include_model=False
         )
         pose_pdbqt = output_dir / f"{pose_basename}.pdbqt"
         pose_pdbqt.write_text(pose_text, encoding="utf-8")
-        if self.complex_checkbox.isChecked():
+        if self.include_complex:
             self._write_complex_pdb(
                 row, pose_text, output_dir / f"{pose_basename}_complex.pdb"
             )
@@ -731,3 +610,211 @@ class ExportComplexDialog(QDialog):
             ),
             encoding="utf-8",
         )
+
+
+
+class ExportComplexDialog(QDialog):
+    """Dialog for exporting selected or multiple docked poses."""
+
+    def __init__(
+        self, results: list[dict], parent: QWidget | None = None, lang: str = "pt"
+    ) -> None:
+        """Initialize export controls."""
+        super().__init__(parent)
+        self.results = list(results)
+        self.lang = lang
+        self.setWindowTitle(I18n.get("export_complex", self.lang))
+        self.selected_radio = QRadioButton(I18n.get("rd_export_selected", self.lang))
+        self.all_radio = QRadioButton(I18n.get("rd_export_all", self.lang))
+        self.selected_radio.setChecked(True)
+        self.mode_group = QButtonGroup(self)
+        self.mode_group.addButton(self.selected_radio)
+        self.mode_group.addButton(self.all_radio)
+        self.top_n_spin = QSpinBox()
+        self.top_n_spin.setRange(1, 999)
+        self.top_n_spin.setValue(1)
+        self.format_combo = QComboBox()
+        self.format_combo.addItems(["pdbqt", "pdb", "mol2"])
+        self.complex_checkbox = QCheckBox(I18n.get("rd_export_complex_pdb", self.lang))
+        self.complex_checkbox.setChecked(True)
+        self.folder_edit = QLineEdit()
+        self.progress_bar = QProgressBar()
+        self.export_button = QPushButton(I18n.get("rd_export_btn", self.lang))
+        self.worker = None
+        self.preview_label = QLabel()
+        self.preview_label.setWordWrap(True)
+        self.preview_label.setTextFormat(Qt.PlainText)
+        self._build_ui()
+        for control in (self.selected_radio, self.all_radio, self.complex_checkbox):
+            control.toggled.connect(self._refresh_preview)
+        self.top_n_spin.valueChanged.connect(self._refresh_preview)
+        self.format_combo.currentTextChanged.connect(self._refresh_preview)
+        self.folder_edit.textChanged.connect(self._refresh_preview)
+        self._refresh_preview()
+
+    def _build_ui(self) -> None:
+        """Build the dialog layout."""
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.selected_radio)
+        layout.addWidget(self.all_radio)
+
+        top_n_row = QHBoxLayout()
+        top_n_row.addWidget(QLabel(I18n.get("rd_topn_per_ligand", self.lang)))
+        top_n_row.addWidget(self.top_n_spin)
+        layout.addLayout(top_n_row)
+
+        format_row = QHBoxLayout()
+        format_row.addWidget(QLabel(I18n.get("rd_format_label", self.lang)))
+        format_row.addWidget(self.format_combo)
+        layout.addLayout(format_row)
+        layout.addWidget(self.complex_checkbox)
+
+        folder_row = QHBoxLayout()
+        folder_row.addWidget(self.folder_edit)
+        browse_button = QPushButton(I18n.get("browse_button", self.lang))
+        browse_button.clicked.connect(self._pick_folder)
+        folder_row.addWidget(browse_button)
+        layout.addLayout(folder_row)
+
+        self.progress_bar.setValue(0)
+        layout.addWidget(self.preview_label)
+        layout.addWidget(self.progress_bar)
+
+        button_box = QDialogButtonBox(Qt.Horizontal)
+        button_box.addButton(self.export_button, QDialogButtonBox.AcceptRole)
+        button_box.addButton(QDialogButtonBox.Cancel)
+        button_box.rejected.connect(self.reject)
+        self.export_button.clicked.connect(self._export)
+        layout.addWidget(button_box)
+
+        self.all_radio.toggled.connect(self.top_n_spin.setVisible)
+        self.top_n_spin.setVisible(False)
+
+    def _pick_folder(self) -> None:
+        """Select an output folder."""
+        folder = QFileDialog.getExistingDirectory(
+            self, I18n.get("select_output_dir", self.lang)
+        )
+        if folder:
+            self.folder_edit.setText(folder)
+
+    def _export(self) -> None:
+        """Run the export workflow."""
+        output_folder = self.folder_edit.text().strip()
+        title = I18n.get("export_complex", self.lang)
+        if not output_folder:
+            QMessageBox.warning(
+                self, title, I18n.get("rd_choose_output_folder", self.lang)
+            )
+            return
+        output_dir = Path(output_folder)
+        export_format = self.format_combo.currentText()
+        rows = self._planned_rows()
+        if not rows:
+            QMessageBox.warning(self, title, I18n.get("rd_no_pose_selected", self.lang))
+            return
+        if export_format in {"pdb", "mol2"} and find_obabel_executable() is None:
+            QMessageBox.critical(
+                self, title, I18n.get("rd_obabel_missing_export", self.lang)
+            )
+            return
+
+        self.export_button.setEnabled(False)
+        self.worker = ExportWorker(rows, output_dir, export_format,
+                                   self.complex_checkbox.isChecked(), self.lang, self)
+        self.worker.progress.connect(self.progress_bar.setValue)
+        self.worker.completed.connect(self._export_completed)
+        self.worker.finished.connect(self._export_finished)
+        self.worker.start()
+
+    def _export_completed(self, count, error, cancelled):
+        self._export_result = (count, error, cancelled)
+
+    def _export_finished(self):
+        count, error, cancelled = self._export_result
+        self.export_button.setEnabled(True)
+        title = I18n.get("export_complex", self.lang)
+        if error:
+            QMessageBox.critical(self, title, I18n.get("rd_export_failed", self.lang).format(exported=count, exc=error))
+        elif cancelled:
+            QMessageBox.information(self, title,
+                ("Exportacao cancelada. Arquivos concluidos: " if self.lang == "pt"
+                 else "Export cancelled. Completed files: ") + str(count))
+        else:
+            QMessageBox.information(self, title, I18n.get("rd_exported_count", self.lang).format(
+                count=count, directory=self.worker.output_dir))
+            self.accept()
+        self._refresh_preview()
+
+    def reject(self):
+        if self.worker is not None and self.worker.isRunning():
+            self.worker.requestInterruption()
+            self.preview_label.setText(
+                "Cancelando apos a conversao atual (limite: 120 s)." if self.lang == "pt"
+                else "Cancelling after the current conversion (limit: 120 s).")
+            return
+        super().reject()
+
+    def closeEvent(self, event):
+        if self.worker is not None and self.worker.isRunning():
+            self.reject()
+            event.ignore()
+        else:
+            super().closeEvent(event)
+
+    def _planned_rows(self):
+        directory = Path(self.folder_edit.text().strip() or ".")
+        reserved = set()
+        planned = []
+        for row in self._rows_to_export():
+            scorer = safe_export_name(str(row.get("scoring_key") or row.get("scoring_function") or "vina"))
+            base = f"{safe_export_name(row['ligand_name'])}_{scorer}_pose{int(row['mode'])}"
+            candidate, number = base, 1
+            while candidate in reserved or any((directory / (candidate + suffix)).exists()
+                for suffix in (".pdbqt", ".pdb", ".mol2", "_complex.pdb")):
+                number += 1
+                candidate = f"{base}_{number}"
+            reserved.add(candidate)
+            planned.append({**row, "_export_name": candidate})
+        return planned
+
+    def _refresh_preview(self):
+        if self.worker is not None and self.worker.isRunning():
+            return
+        rows = self._planned_rows()
+        names = []
+        for row in rows[:10]:
+            names.append(row["_export_name"] + "." + self.format_combo.currentText())
+            if self.complex_checkbox.isChecked():
+                names.append(row["_export_name"] + "_complex.pdb")
+        self.preview_label.setText("\n".join(names) + ("\n..." if len(rows) > 10 else ""))
+
+    def _rows_to_export(self) -> list[dict]:
+        """Resolve the pose rows to export."""
+        if self.selected_radio.isChecked():
+            parent = self.parent()
+            if not hasattr(parent, "_selected_result_row"):
+                return []
+            selected = parent._selected_result_row()
+            return [selected] if selected is not None else []
+
+        top_n = self.top_n_spin.value()
+        rows: list[dict] = []
+        grouped = itertools.groupby(
+            sorted(
+                self.results,
+                key=lambda row: (
+                    row["ligand_name"],
+                    row.get("scoring_function", row.get("scoring_key", "")),
+                    float(row["affinity"]),
+                    int(row["mode"]),
+                ),
+            ),
+            key=lambda row: (
+                row["ligand_name"],
+                row.get("scoring_function", row.get("scoring_key", "")),
+            ),
+        )
+        for _, group_rows in grouped:
+            rows.extend(list(group_rows)[:top_n])
+        return rows

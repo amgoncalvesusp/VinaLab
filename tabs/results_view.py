@@ -406,7 +406,7 @@ def build_pose_view_html(
 <html>
 <head>
   <meta charset="utf-8">
-  <script src="https://cdn.jsdelivr.net/npm/3dmol@2.1.0/build/3Dmol-min.js"></script>
+  <script src="{(Path(__file__).resolve().parents[1] / 'ui' / '3Dmol-min.js').as_uri()}"></script>
   <style>
     html, body {{ margin: 0; width: 100%; height: 100%; overflow: hidden; background: #0b0d12; color: #edf2ff; }}
     #viewer {{ width: 100vw; height: 100vh; position: relative; }}
@@ -499,10 +499,10 @@ def build_pose_view_html(
 </html>"""
 
 
-def build_box_preview_html(receptor_path: Path | None, box: dict | None) -> str:
+def build_box_preview_html(receptor_path: Path | None, box: dict | None, lang: str = "pt") -> str:
     """Return a 3Dmol.js HTML document for the receptor and docking search box."""
     receptor_text = ""
-    receptor_name = "Sem receptor"
+    receptor_name = "Sem receptor" if lang == "pt" else "No receptor"
     if receptor_path is not None and receptor_path.exists():
         receptor_name = receptor_path.name
         receptor_text = pdbqt_text_to_view_pdb(
@@ -511,12 +511,14 @@ def build_box_preview_html(receptor_path: Path | None, box: dict | None) -> str:
         )
     box_js = _box_preview_js(box)
     has_receptor = bool(receptor_text.strip())
-    status = _box_status_label(box)
+    status = _box_status_label(box, lang)
+    hint = ("Caixa: linhas amarelas | centro: esfera amarela | receptor: cartoon e superficie"
+            if lang == "pt" else "Box: yellow wireframe | center: yellow sphere | receptor: cartoon and surface")
     return f"""<!doctype html>
 <html>
 <head>
   <meta charset="utf-8">
-  <script src="https://cdn.jsdelivr.net/npm/3dmol@2.1.0/build/3Dmol-min.js"></script>
+  <script src="{(Path(__file__).resolve().parents[1] / 'ui' / '3Dmol-min.js').as_uri()}"></script>
   <style>
     html, body {{ margin: 0; width: 100%; height: 100%; overflow: hidden; background: #0b0d12; color: #edf2ff; }}
     #viewer {{ width: 100vw; height: 100vh; position: relative; }}
@@ -535,12 +537,12 @@ def build_box_preview_html(receptor_path: Path | None, box: dict | None) -> str:
 <body>
   <div id="viewer"></div>
   <div id="label">{html.escape(receptor_name)} | {html.escape(status)}</div>
-  <div id="hint">Caixa: wireframe amarelo | centro: esfera amarela | receptor: cartoon + superficie local transparente</div>
+  <div id="hint">{html.escape(hint)}</div>
   <script>
     const receptorPdb = {json.dumps(receptor_text)};
     function renderBox() {{
       if (typeof $3Dmol === "undefined") {{
-        document.getElementById("label").textContent = "3Dmol.js indisponivel";
+        document.getElementById("label").textContent = {json.dumps("3Dmol.js indisponivel" if lang == "pt" else "3Dmol.js unavailable")};
         return;
       }}
       const viewer = $3Dmol.createViewer("viewer", {{backgroundColor: "#0b0d12"}});
@@ -565,10 +567,10 @@ def build_box_preview_html(receptor_path: Path | None, box: dict | None) -> str:
 </html>"""
 
 
-def _box_status_label(box: dict | None) -> str:
+def _box_status_label(box: dict | None, lang: str = "pt") -> str:
     """Return a compact label for current search-box parameters."""
     if not box:
-        return "Caixa nao definida"
+        return "Caixa nao definida" if lang == "pt" else "Box not defined"
     center = (
         float(box.get("center_x", 0.0)),
         float(box.get("center_y", 0.0)),
@@ -580,8 +582,8 @@ def _box_status_label(box: dict | None) -> str:
         float(box.get("size_z", 0.0)),
     )
     return (
-        f"Centro {center[0]:.2f}, {center[1]:.2f}, {center[2]:.2f} | "
-        f"Tamanho {size[0]:.1f} x {size[1]:.1f} x {size[2]:.1f} A"
+        f"{'Centro' if lang == 'pt' else 'Center'} {center[0]:.2f}, {center[1]:.2f}, {center[2]:.2f} | "
+        f"{'Tamanho' if lang == 'pt' else 'Size'} {size[0]:.1f} x {size[1]:.1f} x {size[2]:.1f} A"
     )
 
 
@@ -596,7 +598,7 @@ def build_comparison_html(
 <html>
 <head>
   <meta charset="utf-8">
-  <script src="https://cdn.jsdelivr.net/npm/3dmol@2.1.0/build/3Dmol-min.js"></script>
+  <script src="{(Path(__file__).resolve().parents[1] / 'ui' / '3Dmol-min.js').as_uri()}"></script>
   <style>
     html, body {{ margin: 0; width: 100%; height: 100%; overflow: hidden; background: #0b0d12; color: #edf2ff; }}
     #viewer {{ width: 100vw; height: 100vh; }}

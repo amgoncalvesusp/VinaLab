@@ -25,6 +25,18 @@ def _pdbqt(*atoms: str) -> str:
 class SymmetryCorrectedRmsdTests(unittest.TestCase):
     """Cover the assignment-based RMSD that tolerates reordering and symmetry."""
 
+    def test_meeko_pose_matches_original_pdb(self):
+        from rdkit import Chem
+        from rdkit.Chem import AllChem
+        from meeko import MoleculePreparation, PDBQTWriterLegacy
+        mol = Chem.AddHs(Chem.MolFromSmiles("Clc1ccccc1O"))
+        AllChem.EmbedMolecule(mol, randomSeed=1)
+        pose, ok, error = PDBQTWriterLegacy.write_string(MoleculePreparation().prepare(mol)[0])
+        self.assertTrue(ok, error)
+        result = symmetry_corrected_rmsd(pose, Chem.MolToPDBBlock(mol))
+        self.assertTrue(result.comparable, result.reason)
+        self.assertAlmostEqual(result.value, 0.0, places=3)
+
     def test_identical_structures_have_zero_rmsd(self) -> None:
         text = _pdbqt(
             _atom(1, "C", 0.0, 0.0, 0.0, "C"),

@@ -59,11 +59,18 @@ class RmsdResult:
 def _heavy_element_from_line(line: str) -> str | None:
     """Return the element symbol for a heavy ATOM/HETATM record, or None for H/invalid."""
     atom_name = line[12:16].strip()
-    element = line[76:78].strip() if len(line) >= 78 else ""
+    # PDBQT types start at column 78; PDB elements occupy columns 77-78.
+    try:
+        float(line[70:76])
+        element = line[77:].strip()
+        element = {"A": "C", "OA": "O", "OS": "O", "NA": "N", "NS": "N",
+                   "SA": "S", "HD": "H", "HS": "H"}.get(element, element)
+    except ValueError:
+        element = line[76:78].strip()
     if not element:
         element = "".join(char for char in atom_name if char.isalpha())[:1]
     element = element.strip()
-    if not element or element.upper().startswith("H"):
+    if not element or element.upper() == "H":
         return None
     return element.upper()
 

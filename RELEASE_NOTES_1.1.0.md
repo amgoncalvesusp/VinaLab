@@ -31,3 +31,13 @@ Release artifacts are now named for the edition (`VinaLab-Light-1.1.0-...`), the
 ## Validation
 
 The full suite (65 tests) passes in a single pytest process. The PySide6 stub in the docking-helper tests is now installed only when PySide6 is genuinely absent; as a leaked stub it is not a package, which broke collection of every later test module. New regression tests cover the pH-aware ligand protonation flag, the multi-molecule warning, HETATM residue discovery and extraction, and receptor-pose complex assembly.
+
+
+## Maintenance update
+
+- Preserve exports from different scoring functions and existing files; preview output names before export.
+- Export in a background worker, with cancellation after the current conversion (up to 120 seconds).
+- Correct AutoDock atom-type normalization for reference PDB/PDBQT RMSD comparisons.
+- Bundle 3Dmol.js 2.1.0 and its license for offline molecular and docking-box views.
+- Send an extracted ligand directly to docking as the reference.
+- Translate box and extraction controls; distinguish unavailable RMSD from failed validation.

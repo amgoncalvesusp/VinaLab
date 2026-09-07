@@ -30,6 +30,7 @@ class PrepareProteinTab(QWidget):
     """Tab for basic protein preparation operations (UI-only stubs for protonation)."""
 
     receptor_prepared = Signal(str)
+    reference_selected = Signal(str)
 
     def __init__(self) -> None:
         """Build prepare-protein controls."""
@@ -59,6 +60,10 @@ class PrepareProteinTab(QWidget):
         self.ligand_combo = QComboBox()
         self.extract_button = QPushButton()
         self.extract_button.setEnabled(False)
+        self.reference_button = QPushButton()
+        self.reference_button.setEnabled(False)
+        self.extracted_ligand = None
+        self.reference_button.clicked.connect(self._use_reference)
 
         self.proton_group = QGroupBox()
         self.proton_checkbox = QCheckBox()
@@ -103,6 +108,7 @@ class PrepareProteinTab(QWidget):
         self.extract_button.setText(
             "Extrair ligante..." if is_pt else "Extract ligand..."
         )
+        self.reference_button.setText("Usar como referencia" if is_pt else "Use as reference")
         self.proton_group.setTitle("Protonação" if is_pt else "Protonation")
         self.proton_checkbox.setText(
             "Adicionar hidrogênios" if is_pt else "Add hydrogens"
@@ -144,10 +150,13 @@ class PrepareProteinTab(QWidget):
         chain_layout.addStretch()
         layout.addWidget(self.chain_group)
 
-        ligand_layout = QHBoxLayout(self.ligand_group)
+        ligand_layout = QVBoxLayout(self.ligand_group)
         ligand_layout.addWidget(self.ligand_label)
-        ligand_layout.addWidget(self.ligand_combo, stretch=1)
-        ligand_layout.addWidget(self.extract_button)
+        ligand_layout.addWidget(self.ligand_combo)
+        ligand_actions = QHBoxLayout()
+        ligand_actions.addWidget(self.extract_button)
+        ligand_actions.addWidget(self.reference_button)
+        ligand_layout.addLayout(ligand_actions)
         layout.addWidget(self.ligand_group)
 
         proton_layout = QVBoxLayout(self.proton_group)
@@ -217,7 +226,7 @@ class PrepareProteinTab(QWidget):
         try:
             text = self.input_path.read_text(encoding="utf-8", errors="replace")
         except OSError as exc:
-            self.log_console.append(f"Erro ao ler PDB: {exc}")
+            self.log_console.append(("Erro ao ler PDB: " if self.lang == "pt" else "Could not read PDB: ") + str(exc))
             return
         chains: list[str] = []
         for line in text.splitlines():
@@ -241,6 +250,9 @@ class PrepareProteinTab(QWidget):
         such as GOL) is offered with its atom count so the real ligand is obvious.
         """
         self.ligand_combo.clear()
+        self.extract_button.setEnabled(False)
+        self.reference_button.setEnabled(False)
+        self.extracted_ligand = None
         if not self.input_path or not self.input_path.exists():
             return
         try:
@@ -250,13 +262,12 @@ class PrepareProteinTab(QWidget):
             return
         counts = hetatm_residue_counts(text)
         for (resname, chain, resseq), atom_count in sorted(counts.items()):
-            label = f"{resname} {chain}{resseq} ({atom_count} átomos)"
+            label = f"{resname} {chain}{resseq} ({atom_count} {'atomos' if self.lang == 'pt' else 'atoms'})"
             self.ligand_combo.addItem(label, (resname, chain, resseq))
         self.extract_button.setEnabled(bool(counts))
         self.log_console.append(
-            f"{len(counts)} ligante(s) HETATM detectado(s)."
-            if counts
-            else "Nenhum ligante HETATM encontrado (fora águas)."
+            f"{len(counts)} ligante(s) HETATM detectado(s)." if self.lang == "pt"
+            else f"{len(counts)} HETATM ligand(s) found (waters excluded)."
         )
 
     def _extract_ligand(self) -> None:
@@ -283,12 +294,12 @@ class PrepareProteinTab(QWidget):
         )
         if not file_name:
             return
-        lines = hetatm_residue_lines(
-            self.input_path.read_text(encoding="utf-8", errors="replace"),
-            (resname, chain, resseq),
-        )
         output_path = Path(file_name)
         try:
+            lines = hetatm_residue_lines(
+                self.input_path.read_text(encoding="utf-8", errors="replace"),
+                (resname, chain, resseq),
+            )
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text("\n".join(lines + ["END"]) + "\n", encoding="utf-8")
         except OSError as exc:
@@ -299,9 +310,15 @@ class PrepareProteinTab(QWidget):
             )
             return
         self.log_console.append(
-            f"Ligante {resname} {chain}{resseq} ({len(lines)} átomos) salvo em {output_path}. "
-            "Converta-o na aba Conversor para usá-lo como ligante de referência da caixa."
+            ("Ligante salvo: " if self.lang == "pt" else "Ligand saved: ") + str(output_path)
         )
+
+        self.extracted_ligand = output_path
+        self.reference_button.setEnabled(True)
+
+    def _use_reference(self):
+        if self.extracted_ligand is not None:
+            self.reference_selected.emit(str(self.extracted_ligand))
 
     def _run_preparation(self) -> None:
         """Strip HETATM, filter chain, and write the prepared PDB. Protonation stays a stub."""

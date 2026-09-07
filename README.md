@@ -1,6 +1,6 @@
 # VinaLab Light
 
-VinaLab Light `v1.0.1` is the latest stable release of this project. It is a focused desktop GUI for AutoDock Vina 1.2.x, with the core docking workflow and practical result-validation tools.
+VinaLab Light `v1.1.0` is the latest stable release of this project. It is a focused desktop GUI for AutoDock Vina 1.2.x, with the core docking workflow and practical result-validation tools.
 
 ## What is included
 
@@ -22,12 +22,12 @@ This release intentionally focuses on AutoDock Vina native scoring. GNINA, CNN/n
 
 ## Downloads
 
-The `v1.0.1` GitHub release provides x64 packages for Windows and Ubuntu Linux:
+The `v1.1.0` GitHub release provides x64 packages for Windows and Ubuntu Linux:
 
-- `VinaLab-1.0.1-windows-x64-setup.exe` - Windows setup installer.
-- `VinaLab-1.0.1-windows-x64-portable.zip` - Windows portable package.
-- `VinaLab-1.0.1-ubuntu-x64.deb` - Ubuntu/Debian installer.
-- `VinaLab-1.0.1-linux-x64.tar.gz` - Linux portable archive.
+- `VinaLab-Light-1.1.0-windows-x64-setup.exe` - Windows setup installer.
+- `VinaLab-Light-1.1.0-windows-x64-portable.zip` - Windows portable package.
+- `VinaLab-Light-1.1.0-ubuntu-x64.deb` - Ubuntu/Debian installer.
+- `VinaLab-Light-1.1.0-linux-x64.tar.gz` - Linux portable archive.
 
 SHA-256 checksum files are included with the release assets.
 
@@ -46,7 +46,7 @@ The Windows build does not display or package GNINA. Use Linux/WSL only if you n
 Install the Debian package with:
 
 ```bash
-sudo apt install ./VinaLab-1.0.1-ubuntu-x64.deb
+sudo apt install ./VinaLab-Light-1.1.0-ubuntu-x64.deb
 ```
 
 Then launch VinaLab from the application menu or run:
