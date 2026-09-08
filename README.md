@@ -7,7 +7,8 @@ VinaLab Light `v1.1.0` is the latest stable release of this project. It is a foc
 - Native AutoDock Vina scoring functions: `Vina` and `Vinardo`.
 - PDB, MOL2, and SDF to PDBQT conversion for receptor and ligand preparation.
 - Bundled AutoDock Vina CLI fallback for frozen Windows and Linux builds.
-- Docking setup for a rigid receptor, a ligand, or a ligand folder.
+- Optional protein preparation before conversion, with direct Meeko PDBQT output.
+- One ligand-selection field for multiple PDBQT files or a screening folder.
 - Docking-box editor with a 3D preview of the receptor and search volume.
 - Reference/base ligand selection to center the box and fit its size with padding.
 - Reference-ligand RMSD comparison for new poses, with configurable pass/fail cutoff.
@@ -59,12 +60,20 @@ The Debian package installs the application under `/opt/vinalab`, registers a de
 
 ## Recommended workflow
 
-1. Convert the receptor and ligand to PDBQT in the conversion tab.
-2. Select the receptor and ligand, then choose `Vina` or `Vinardo`.
-3. Define the docking box manually, or select a reference ligand to center and size it.
-4. Confirm the box in the 3D preview before running docking.
-5. Review affinity, poses, interactions, clusters, and reference RMSD in the results tab.
+1. Optionally prepare the protein (remove selected HETATM residues, choose a chain, extract a reference ligand). Save PDB or generate PDBQT directly with Meeko.
+2. Convert remaining inputs to PDBQT. Meeko is the default; Open Babel is an explicit alternative. Receptor alternate conformation A is used when present; incomplete residues are not silently deleted.
+3. Select the receptor and one or more ligand files (or a folder), then choose `Vina` or `Vinardo`.
+4. Define the docking box manually, or select a reference ligand to center and size it. The first preview tab, **3D Box**, activates when coordinates change.
+5. Review affinity, poses, contacts, clusters, and reference RMSD. Panels and selection lists support scrolling on notebook screens.
 6. Export a report or open a selected pose in PyMOL when available.
+
+## Interaction methodology
+
+Light uses **MDAnalysis distance calculations with application-defined geometric heuristics**, not PLIP. The selected cutoff (4, 5, or 6 angstroms) identifies heavy-atom contacts. Carbon-carbon pairs within 4 angstroms are hydrophobic candidates; N/O/S pairs within 3.5 angstroms are polar contacts. These are not chemically validated hydrogen bonds: donor/acceptor roles and hydrogen-bond angles are not assigned. The table retains the shortest distance per residue and category. Contact frequency is calculated over the top ten available poses of the ligand.
+
+References: [Michaud-Agrawal et al., 2011](https://doi.org/10.1002/jcc.21787) and [Gowers et al., 2016](https://doi.org/10.25080/majora-629e541a-00e). These describe MDAnalysis; the classification thresholds above are VinaLab heuristics, not a validated PLIP protocol.
+
+The molecular view displays the receptor as cartoon and nearby residues as sticks. Cartoon rendering requires recognizable protein residue and backbone atom names; a PDBQT that has lost this information cannot reconstruct a protein backbone.
 
 ## Running from source
 

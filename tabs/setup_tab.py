@@ -5,7 +5,6 @@ from pathlib import Path
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
-    QButtonGroup,
     QCheckBox,
     QFileDialog,
     QFormLayout,
@@ -14,7 +13,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
-    QRadioButton,
+    QMenu,
     QVBoxLayout,
     QWidget,
 )
@@ -37,12 +36,11 @@ class SetupTab(QWidget):
         self.rigid_receptor_edit = QLineEdit()
         self.flex_receptor_edit = QLineEdit()
         self.fully_rigid_checkbox = QCheckBox()
-        self.single_ligand_edit = QLineEdit()
-        self.batch_folder_edit = QLineEdit()
+        self.ligand_edit = QLineEdit()
+        self._ligand_files: list[Path] = []
+        self._ligand_folder: Path | None = None
         self.warning_label = QLabel()
         self.batch_count_label = QLabel()
-        self.single_radio = QRadioButton()
-        self.batch_radio = QRadioButton()
         self.receptor_group = QGroupBox()
         self.ligand_group = QGroupBox()
         self.receptor_file_label = QLabel()
@@ -62,7 +60,6 @@ class SetupTab(QWidget):
             self.batch_folder_label,
         ):
             label.setWordWrap(True)
-        self.single_radio.setChecked(True)
         self._build_ui()
         self._connect_signals()
         self.retranslate_ui(self.lang)
@@ -86,23 +83,30 @@ class SetupTab(QWidget):
         self.validate_inputs()
 
     def set_ligand_file(self, path: str) -> None:
-        """Set the single ligand field from an external conversion result."""
-        self.single_radio.setChecked(True)
-        self.single_ligand_edit.setText(str(Path(path)))
+        """Use a single converted ligand."""
+        self.set_ligand_files([path])
+
+    def set_ligand_files(self, paths: list[str]) -> None:
+        """Replace the selection with an ordered, unique list of files."""
+        self._ligand_files = list(dict.fromkeys(Path(path) for path in paths))
+        self._ligand_folder = None
+        self.ligand_edit.setText("; ".join(str(path) for path in self._ligand_files))
+        self.ligand_edit.setToolTip("\n".join(str(path) for path in self._ligand_files))
         self.validate_inputs()
 
     def set_ligand_folder(self, path: str) -> None:
         """Set the ligand batch folder from external conversion results."""
-        self.batch_radio.setChecked(True)
-        self.batch_folder_edit.setText(str(Path(path)))
+        self._ligand_files = []
+        self._ligand_folder = Path(path)
+        self.ligand_edit.setText(str(self._ligand_folder))
+        self.ligand_edit.setToolTip(str(self._ligand_folder))
         self.validate_inputs()
 
     def ligand_paths(self) -> list[Path]:
         """Return selected ligand paths based on the active ligand mode."""
-        if self.single_radio.isChecked():
-            ligand = self._path_from_edit(self.single_ligand_edit)
-            return [ligand] if ligand else []
-        return discover_pdbqt_files(self._path_from_edit(self.batch_folder_edit))
+        if self._ligand_folder is not None:
+            return discover_pdbqt_files(self._ligand_folder)
+        return list(self._ligand_files)
 
     def validate_inputs(self) -> bool:
         """Validate selected setup paths and show inline warnings."""
@@ -118,16 +122,16 @@ class SetupTab(QWidget):
         if not validate_optional_pdbqt(flex):
             warnings.append(I18n.get("warn_flex", self.lang))
 
-        if self.single_radio.isChecked():
-            if not is_pdbqt_file(self._path_from_edit(self.single_ligand_edit)):
-                warnings.append(I18n.get("warn_ligand", self.lang))
-        else:
-            discovered = self.ligand_paths()
-            self.batch_count_label.setText(
-                I18n.get("batch_count", self.lang).format(count=len(discovered))
-            )
-            if not discovered:
-                warnings.append(I18n.get("warn_batch", self.lang))
+        discovered = self.ligand_paths()
+        self.batch_count_label.setText(
+            I18n.get("batch_count", self.lang).format(count=len(discovered))
+        )
+        if not discovered or not all(is_pdbqt_file(path) for path in discovered):
+            warnings.append(I18n.get("warn_ligand", self.lang))
+        names = [path.stem.casefold() for path in discovered]
+        if len(names) != len(set(names)):
+            warnings.append("Os ligantes precisam de nomes de arquivo distintos para evitar sobrescrever resultados."
+                            if self.lang == "pt" else "Ligands need distinct filenames to avoid overwriting results.")
 
         self.warning_label.setText(" ".join(warnings))
         self.warning_label.setVisible(bool(warnings))
@@ -139,9 +143,7 @@ class SetupTab(QWidget):
         self.lang = lang
         self.receptor_group.setTitle(I18n.get("setup_group", lang))
         self.ligand_group.setTitle(I18n.get("ligand_group", lang))
-        self.single_radio.setText(I18n.get("single_ligand", lang))
-        self.batch_radio.setText(I18n.get("batch_mode", lang))
-        self.batch_radio.setToolTip(
+        self.ligand_group.setToolTip(
             "AutoDock Vina aceita apenas um ligante por arquivo PDBQT. "
             "No Modo Triagem, selecione uma pasta contendo arquivos .pdbqt (um por ligante); "
             "cada arquivo será processado em sequência."
@@ -150,11 +152,14 @@ class SetupTab(QWidget):
             "In Screening mode, select a folder containing .pdbqt files (one per ligand); "
             "each file is processed sequentially."
         )
-        self.batch_folder_edit.setToolTip(self.batch_radio.toolTip())
         self.rigid_receptor_edit.setToolTip(I18n.get("setup_rigid_tooltip", lang))
         self.flex_receptor_edit.setToolTip(I18n.get("setup_flex_tooltip", lang))
-        self.single_ligand_label.setText(I18n.get("single_ligand_file", lang))
-        self.batch_folder_label.setText(I18n.get("batch_folder", lang))
+        self.single_ligand_label.setText(
+            "Selecione arquivos dos ligantes ou pasta de triagem" if lang == "pt"
+            else "Select ligand files or a screening folder"
+        )
+        self.ligand_files_action.setText("Arquivos de ligantes…" if lang == "pt" else "Ligand files…")
+        self.ligand_folder_action.setText("Pasta de triagem…" if lang == "pt" else "Screening folder…")
         for button in self.file_buttons:
             button.setText(I18n.get("browse_button", lang))
         self._refresh_receptor_form_labels()
@@ -207,22 +212,18 @@ class SetupTab(QWidget):
     def _build_ligand_group(self) -> QGroupBox:
         """Build ligand mode and file picker controls."""
         layout = QVBoxLayout(self.ligand_group)
-        mode_row = QHBoxLayout()
-        button_group = QButtonGroup(self)
-        button_group.addButton(self.single_radio)
-        button_group.addButton(self.batch_radio)
-        mode_row.addWidget(self.single_radio)
-        mode_row.addWidget(self.batch_radio)
-        mode_row.addStretch()
-        layout.addLayout(mode_row)
         layout.addWidget(self.single_ligand_label)
-        layout.addLayout(
-            self._file_row(self.single_ligand_edit, self._pick_single_ligand)
-        )
-        layout.addWidget(self.batch_folder_label)
-        layout.addLayout(
-            self._folder_row(self.batch_folder_edit, self._pick_batch_folder)
-        )
+        self.ligand_edit.setReadOnly(True)
+        self.ligand_menu = QMenu(self)
+        self.ligand_files_action = self.ligand_menu.addAction("", self._pick_single_ligand)
+        self.ligand_folder_action = self.ligand_menu.addAction("", self._pick_batch_folder)
+        button = QPushButton()
+        button.setMenu(self.ligand_menu)
+        self.file_buttons.append(button)
+        row = QHBoxLayout()
+        row.addWidget(self.ligand_edit)
+        row.addWidget(button)
+        layout.addLayout(row)
         layout.addWidget(self.batch_count_label)
         return self.ligand_group
 
@@ -255,7 +256,12 @@ class SetupTab(QWidget):
 
     def _pick_single_ligand(self) -> None:
         """Pick a single ligand PDBQT file."""
-        self._pick_file_into(self.single_ligand_edit)
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, I18n.get("select_pdbqt", self.lang), "",
+            I18n.get("pdbqt_filter", self.lang),
+        )
+        if paths:
+            self.set_ligand_files(paths)
 
     def _pick_batch_folder(self) -> None:
         """Pick a ligand batch folder."""
@@ -263,8 +269,7 @@ class SetupTab(QWidget):
             self, I18n.get("select_ligand_folder", self.lang)
         )
         if folder:
-            self.batch_folder_edit.setText(str(Path(folder)))
-            self.validate_inputs()
+            self.set_ligand_folder(folder)
 
     def _pick_file_into(self, edit: QLineEdit) -> None:
         """Pick a PDBQT file into a line edit."""
@@ -284,12 +289,8 @@ class SetupTab(QWidget):
             self.receptor_edit,
             self.rigid_receptor_edit,
             self.flex_receptor_edit,
-            self.single_ligand_edit,
-            self.batch_folder_edit,
         ):
             edit.textChanged.connect(self.validate_inputs)
-        self.single_radio.toggled.connect(self.validate_inputs)
-        self.batch_radio.toggled.connect(self.validate_inputs)
 
     def _refresh_receptor_form_labels(self) -> None:
         """Refresh receptor form labels."""

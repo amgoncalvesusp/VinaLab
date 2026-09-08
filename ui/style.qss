@@ -455,6 +455,11 @@ QComboBox QAbstractItemView {
     outline: none;
 }
 
+QComboBox QAbstractItemView::item {
+    min-height: 28px;
+    padding: 4px 8px;
+}
+
 /* === RADIO BUTTONS === */
 QRadioButton {
     color: #1c2430;

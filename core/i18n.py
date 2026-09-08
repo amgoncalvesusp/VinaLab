@@ -30,7 +30,7 @@ class I18n:
         "tab_results": {"pt": "Resultados", "en": "Results"},
         "tab_report": {"pt": "Relatório", "en": "Report"},
         "tab_converter": {"pt": "Conversor (opcional)", "en": "Converter (optional)"},
-        "tab_prepare_protein": {"pt": "Preparar Proteína", "en": "Prepare Protein"},
+        "tab_prepare_protein": {"pt": "Preparar Proteína (opcional)", "en": "Prepare Protein (optional)"},
         "menu_file": {"pt": "Arquivo", "en": "File"},
         "menu_edit": {"pt": "Editar", "en": "Edit"},
         "menu_view": {"pt": "Exibir", "en": "View"},
@@ -151,13 +151,13 @@ class I18n:
             "pt": "Score de docking (kcal/mol)",
             "en": "Docking score (kcal/mol)",
         },
-        "reference_rmsd": {"pt": "RMSD referencia", "en": "Reference RMSD"},
+        "reference_rmsd": {"pt": "RMSD da referência", "en": "Reference RMSD"},
         "reference_validation": {
-            "pt": "Validacao referencia",
+            "pt": "Validação da referência",
             "en": "Reference validation",
         },
         "score_vs_reference_rmsd": {
-            "pt": "Score vs RMSD referencia",
+            "pt": "Score vs RMSD da referência",
             "en": "Score vs reference RMSD",
         },
         "rmsd_best_pose": {"pt": "RMSD para melhor pose", "en": "RMSD to best pose"},
@@ -348,7 +348,7 @@ class I18n:
         "center_label": {"pt": "Centro (x, y, z)", "en": "Center (x, y, z)"},
         "size_label": {"pt": "Tamanho (x, y, z)", "en": "Size (x, y, z)"},
         "reference_ligand": {
-            "pt": "Ligante de referencia/base",
+            "pt": "Ligante de referência/base",
             "en": "Reference/base ligand",
         },
         "reference_ligand_button": {
@@ -356,23 +356,23 @@ class I18n:
             "en": "Choose PDBQT/PDB",
         },
         "tip_reference_ligand": {
-            "pt": "Usado para centralizar a caixa e calcular o RMSD das poses contra a referencia.",
+            "pt": "Usado para centralizar a caixa e calcular o RMSD das poses contra a referência.",
             "en": "Used to center the box and calculate pose RMSD against the reference.",
         },
         "reference_padding": {
-            "pt": "Padding da referencia (A)",
+            "pt": "Margem da referência (Å)",
             "en": "Reference padding (A)",
         },
         "tip_reference_padding": {
-            "pt": "Margem adicionada em cada lado do ligante de referencia ao ajustar a caixa.",
+            "pt": "Margem adicionada em cada lado do ligante de referência ao ajustar a caixa.",
             "en": "Margin added around the reference ligand when fitting the docking box.",
         },
         "reference_rmsd_cutoff": {
-            "pt": "Corte RMSD referencia (A)",
+            "pt": "Limite de RMSD da referência (Å)",
             "en": "Reference RMSD cutoff (A)",
         },
         "tip_reference_rmsd_cutoff": {
-            "pt": "Limite usado para marcar uma pose como validada contra o ligante de referencia.",
+            "pt": "Limite usado para marcar uma pose como validada contra o ligante de referência.",
             "en": "Threshold used to mark a pose as validated against the reference ligand.",
         },
         "box_preset_custom": {"pt": "Personalizado", "en": "Custom"},

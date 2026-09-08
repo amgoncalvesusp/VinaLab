@@ -30,6 +30,9 @@ def resource_path(relative_path: str) -> Path:
 
 def main() -> int:
     """Launch the VinaLab desktop application."""
+    if len(sys.argv) == 3 and sys.argv[1] == "--smoke-test":
+        from core.release_smoke import run
+        return run(sys.argv[2])
     try:
         from core.environment_manager import EnvironmentManager
 

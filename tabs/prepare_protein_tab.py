@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import tempfile
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
@@ -24,6 +25,7 @@ from PySide6.QtWidgets import (
 from core.file_utils import hetatm_residue_counts, hetatm_residue_lines
 from core.i18n import I18n
 from core.scrolling import ScrollManager
+from ui.converter_widget import ConversionWorker
 
 
 class PrepareProteinTab(QWidget):
@@ -74,6 +76,9 @@ class PrepareProteinTab(QWidget):
         self.output_edit = QLineEdit()
         self.output_edit.setReadOnly(True)
         self.output_button = QPushButton()
+        self.pdbqt_checkbox = QCheckBox()
+        self._conversion_worker = None
+        self._preparation_directory = None
 
         self.run_button = QPushButton()
         self.log_console = QTextEdit()
@@ -108,7 +113,8 @@ class PrepareProteinTab(QWidget):
         self.extract_button.setText(
             "Extrair ligante..." if is_pt else "Extract ligand..."
         )
-        self.reference_button.setText("Usar como referencia" if is_pt else "Use as reference")
+        self.reference_button.setText("Usar como referência" if is_pt else "Use as reference")
+        self.pdbqt_checkbox.setText("Salvar diretamente em PDBQT (Meeko)" if is_pt else "Save directly as PDBQT (Meeko)")
         self.proton_group.setTitle("Protonação" if is_pt else "Protonation")
         self.proton_checkbox.setText(
             "Adicionar hidrogênios" if is_pt else "Add hydrogens"
@@ -169,6 +175,7 @@ class PrepareProteinTab(QWidget):
         output_row.addWidget(self.output_edit)
         output_row.addWidget(self.output_button)
         layout.addLayout(output_row)
+        layout.addWidget(self.pdbqt_checkbox)
 
         layout.addWidget(self.run_button)
         layout.addWidget(self.log_console)
@@ -182,6 +189,12 @@ class PrepareProteinTab(QWidget):
         self.output_button.clicked.connect(self._pick_output)
         self.run_button.clicked.connect(self._run_preparation)
         self.extract_button.clicked.connect(self._extract_ligand)
+        self.pdbqt_checkbox.toggled.connect(self._update_output_format)
+
+    def _update_output_format(self) -> None:
+        if self.output_edit.text():
+            suffix = ".pdbqt" if self.pdbqt_checkbox.isChecked() else ".pdb"
+            self.output_edit.setText(str(Path(self.output_edit.text()).with_suffix(suffix)))
 
     def _pick_input(self) -> None:
         """Open a native file dialog for PDB selection."""
@@ -205,7 +218,7 @@ class PrepareProteinTab(QWidget):
             self,
             "Salvar PDB preparado" if self.lang == "pt" else "Save prepared PDB",
             "",
-            "PDB (*.pdb)",
+            "PDBQT (*.pdbqt)" if self.pdbqt_checkbox.isChecked() else "PDB (*.pdb)",
         )
         if file_name:
             self.output_edit.setText(str(Path(file_name)))
@@ -216,6 +229,7 @@ class PrepareProteinTab(QWidget):
             return
         suggestion = self.input_path.with_name(f"{self.input_path.stem}_prep.pdb")
         self.output_edit.setText(str(suggestion))
+        self._update_output_format()
 
     def _populate_chains(self) -> None:
         """Parse chain IDs from the input PDB and fill the combo box."""
@@ -262,7 +276,7 @@ class PrepareProteinTab(QWidget):
             return
         counts = hetatm_residue_counts(text)
         for (resname, chain, resseq), atom_count in sorted(counts.items()):
-            label = f"{resname} {chain}{resseq} ({atom_count} {'atomos' if self.lang == 'pt' else 'atoms'})"
+            label = f"{resname} {chain}{resseq} ({atom_count} {'átomos' if self.lang == 'pt' else 'atoms'})"
             self.ligand_combo.addItem(label, (resname, chain, resseq))
         self.extract_button.setEnabled(bool(counts))
         self.log_console.append(
@@ -338,6 +352,10 @@ class PrepareProteinTab(QWidget):
             )
             return
         output_path = Path(output_text)
+        pdbqt_output = output_path.with_suffix(".pdbqt") if self.pdbqt_checkbox.isChecked() else None
+        if pdbqt_output is not None:
+            self._preparation_directory = tempfile.TemporaryDirectory(prefix="vinalab_prepare_")
+            output_path = Path(self._preparation_directory.name) / "prepared.pdb"
 
         try:
             lines = self.input_path.read_text(
@@ -396,7 +414,26 @@ class PrepareProteinTab(QWidget):
         if self.proton_checkbox.isChecked():
             self._add_hydrogens_stub(output_path)
 
-        self.receptor_prepared.emit(str(output_path))
+        if pdbqt_output is not None:
+            self.run_button.setEnabled(False)
+            self._conversion_worker = ConversionWorker([output_path], pdbqt_output, "receptor")
+            self._conversion_worker.log_signal.connect(self.log_console.append)
+            self._conversion_worker.finished_signal.connect(self._pdbqt_finished)
+            self._conversion_worker.start()
+        else:
+            self.receptor_prepared.emit(str(output_path))
+
+    def _pdbqt_finished(self, results) -> None:
+        self._conversion_worker.wait()
+        self.run_button.setEnabled(True)
+        if self._preparation_directory is not None:
+            self._preparation_directory.cleanup()
+            self._preparation_directory = None
+        if results and results[0].success:
+            self.receptor_prepared.emit(str(results[0].output_path))
+        else:
+            QMessageBox.warning(self, I18n.get("pp_prepare_title", self.lang),
+                                results[0].errors if results else "PDBQT não gerado.")
 
     def _add_hydrogens_stub(self, output_path: Path) -> None:
         """Add hydrogens via Open Babel CLI (`obabel -h`) at neutral pH.

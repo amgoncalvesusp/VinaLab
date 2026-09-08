@@ -88,7 +88,8 @@ class ResponsiveManager:
         app = QApplication.instance()
         if app:
             app.setFont(QFont("Segoe UI", settings["base_font"]))
-        window.setMinimumSize(QSize(*settings["minimum_size"]))
+        # A large monitor profile must not prevent resizing onto a notebook screen.
+        window.setMinimumSize(QSize(900, 600))
 
         for tab_bar in window.findChildren(QTabBar):
             tab_bar.setMinimumHeight(settings["tab_height"])
@@ -145,7 +146,9 @@ class ResponsiveManager:
     @staticmethod
     def _save_profile(window: QMainWindow, profile: str) -> None:
         """Persist the selected screen profile."""
-        prefs_path = Path(__file__).resolve().parents[1] / "config" / "user_prefs.json"
+        prefs_path = getattr(window, "prefs_path", None)
+        if prefs_path is None:
+            return
         prefs = {}
         if prefs_path.exists():
             try:

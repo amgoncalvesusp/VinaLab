@@ -35,15 +35,20 @@ class SmokeWorkflowTests(unittest.TestCase):
     def test_smoke_convert_receptor_pdb_to_pdbqt(self) -> None:
         """Convert a minimal receptor PDB to a charged PDBQT."""
         deps = FileConverter.check_dependencies()
-        if not (deps["mk_prepare_receptor"] or deps["openbabel_py"] or deps["obabel_cli"]):
-            self.skipTest("No receptor converter runtime installed")
+        if not deps["mk_prepare_receptor"]:
+            self.skipTest("Meeko receptor runtime not installed")
         with tempfile.TemporaryDirectory() as tmpdir:
             receptor = Path(tmpdir) / "receptor.pdb"
-            receptor.write_text(_RECEPTOR_PDB, encoding="utf-8")
+            from rdkit import Chem
+            from rdkit.Chem import AllChem
+            peptide = Chem.AddHs(Chem.MolFromSequence("AG"))
+            AllChem.EmbedMolecule(peptide, randomSeed=42)
+            Chem.MolToPDBFile(Chem.RemoveHs(peptide), str(receptor))
             result = FileConverter.auto_convert(receptor, "receptor")
 
             self.assertTrue(result.success, result.errors)
             self.assertTrue(validate_pdbqt_charges(result.output_path))
+            self.assertIn("Meeko", result.log)
 
     def test_smoke_vina_cli_docking(self) -> None:
         """Run the bundled Vina CLI on a minimal receptor/ligand pair."""

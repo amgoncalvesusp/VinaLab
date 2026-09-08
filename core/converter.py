@@ -21,11 +21,13 @@ import math
 from pathlib import Path
 import subprocess
 import sys
+from threading import Lock
 
 from core.file_utils import validate_ligand_pdbqt
 from core.native_tools import find_obabel_executable, native_tool_env
 
 logger = logging.getLogger(__name__)
+_RECEPTOR_CLI_LOCK = Lock()
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0
 # Physiological pH used when Open Babel protonates a ligand (obabel -p 7.4).
 LIGAND_PROTONATION_PH = 7.4
@@ -175,23 +177,13 @@ class FileConverter:
                 post_stats,
             )
             return FileConverter._validated_ligand_result(output_path, log, "", mol)
-        except Exception as exc:  # noqa: BLE001 - RDKit/Meeko failed; try Open Babel fallback
-            fallback = FileConverter._convert_ligand_via_obabel(input_path, output_path)
-            if fallback.success:
-                if multi_note:
-                    return ConversionResult(
-                        True,
-                        fallback.output_path,
-                        f"{fallback.log}\n{multi_note}",
-                        fallback.errors,
-                    )
-                return fallback
+        except Exception as exc:  # noqa: BLE001 - preserve the selected preparation engine
             return ConversionResult(
                 False,
                 output_path,
-                fallback.log,
+                multi_note,
                 f"Erro: não foi possível converter o ligante {input_format.upper()} "
-                f"com RDKit/Meeko nem com Open Babel.\nRDKit/Meeko: {exc}\n{fallback.errors}",
+                f"com RDKit/Meeko: {exc}\nRevise a estrutura ou selecione Open Babel explicitamente.",
             )
 
     @staticmethod
@@ -210,7 +202,7 @@ class FileConverter:
             input_path,
             output_path,
             receptor=False,
-            previous_error="RDKit/Meeko indisponível para o ligante.",
+            previous_error="Preparação alternativa com Open Babel.",
         )
         if not result.success or not output_path.exists():
             return result
@@ -226,7 +218,7 @@ class FileConverter:
         return ConversionResult(
             True,
             output_path,
-            (result.log or "") + "\nLigante convertido com Open Babel (fallback).",
+            (result.log or "") + "\nLigante convertido com Open Babel.",
             result.errors,
         )
 
@@ -419,23 +411,35 @@ class FileConverter:
 
     @staticmethod
     def convert_pdb_to_pdbqt_receptor(
-        input_path: Path, output_path: Path
+        input_path: Path, output_path: Path, allow_fallback: bool = False
     ) -> ConversionResult:
         """Convert a receptor PDB to PDBQT with Meeko in-process, OpenBabel fallback."""
         meeko_result = FileConverter._convert_receptor_via_meeko(input_path, output_path)
         if meeko_result is not None and meeko_result.success:
             return meeko_result
         primary_log = (
-            meeko_result.errors
+            meeko_result.log + "\n" + meeko_result.errors
             if meeko_result is not None
             else "Meeko (mk_prepare_receptor) indisponível."
         )
+        if not allow_fallback:
+            return ConversionResult(False, output_path, primary_log,
+                "Meeko não preparou o receptor. Revise os resíduos e átomos do PDB; "
+                "Open Babel pode ser selecionado explicitamente no conversor.")
         return FileConverter._convert_via_openbabel(
             input_path, output_path, receptor=True, previous_error=primary_log
         )
 
     @staticmethod
     def _convert_receptor_via_meeko(
+        input_path: Path, output_path: Path
+    ) -> ConversionResult | None:
+        """Serialize the CLI entry point, which temporarily changes sys.argv."""
+        with _RECEPTOR_CLI_LOCK:
+            return FileConverter._convert_receptor_via_meeko_locked(input_path, output_path)
+
+    @staticmethod
+    def _convert_receptor_via_meeko_locked(
         input_path: Path, output_path: Path
     ) -> ConversionResult | None:
         """Prepare a receptor PDBQT in-process via Meeko's CLI entry point.
@@ -447,8 +451,8 @@ class FileConverter:
         ``meeko.cli.mk_prepare_receptor`` — already collected into the bundle — so
         we run its ``main()`` in-process. Meeko 0.7 arguments: ``--read_pdb`` reads
         a PDB without ProDy, ``-p`` writes the PDBQT (``-o`` is only a basename),
-        and ``--allow_bad_res`` drops residues with missing atoms instead of
-        aborting. Returns ``None`` when Meeko cannot be imported so the caller
+        Alternate conformation A is selected explicitly; incomplete residues
+        cause failure instead of being silently removed. Returns ``None`` when Meeko cannot be imported so the caller
         falls back to Open Babel.
         """
         try:
@@ -467,7 +471,8 @@ class FileConverter:
             str(output_path.with_suffix("")),
             "-p",
             str(output_path),
-            "--allow_bad_res",
+            "--default_altloc",
+            "A",
         ]
         captured = io.StringIO()
         saved_argv = sys.argv
@@ -496,12 +501,11 @@ class FileConverter:
         finally:
             sys.argv = saved_argv
 
-        if output_path.exists() and output_path.stat().st_size > 0:
+        if exit_code == 0 and output_path.exists() and output_path.stat().st_size > 0:
             return ConversionResult(
                 True,
                 output_path,
-                captured.getvalue()
-                or "Receptor preparado com Meeko (mk_prepare_receptor, em processo).",
+                "Receptor preparado com Meeko (mk_prepare_receptor). Conformações alternativas: A quando presentes.\n" + captured.getvalue(),
                 "",
             )
         return ConversionResult(
@@ -515,13 +519,20 @@ class FileConverter:
     def convert_mol2_to_pdbqt_receptor(
         input_path: Path, output_path: Path
     ) -> ConversionResult:
-        """Convert a receptor MOL2 file to PDBQT with Open Babel (rigid receptor)."""
-        return FileConverter._convert_via_openbabel(
-            input_path,
-            output_path,
-            receptor=True,
-            previous_error="MOL2 receptor requer Open Babel.",
-        )
+        """Read MOL2/SDF via Open Babel, then parameterize the receptor with Meeko."""
+        import tempfile
+        try:
+            from openbabel import pybel
+            with tempfile.TemporaryDirectory(prefix="vinalab_receptor_") as directory:
+                intermediate = Path(directory) / "receptor.pdb"
+                molecule = next(pybel.readfile(FileConverter._obabel_input_format(input_path), str(input_path)))
+                molecule.write("pdb", str(intermediate), overwrite=True)
+                result = FileConverter.convert_pdb_to_pdbqt_receptor(intermediate, output_path)
+                return ConversionResult(result.success, result.output_path,
+                    "Leitura MOL2/SDF: Open Babel; preparação PDBQT: Meeko.\n" + result.log,
+                    result.errors)
+        except Exception as exc:
+            return ConversionResult(False, output_path, "", f"Falha ao ler receptor MOL2/SDF: {exc}")
 
     @staticmethod
     def auto_convert(input_path: Path, molecule_type: str) -> ConversionResult:
@@ -653,7 +664,7 @@ class FileConverter:
             return ConversionResult(
                 True,
                 output_path,
-                f"{descriptor} convertido com Open Babel (API em processo).",
+                f"{previous_error}\n{descriptor} convertido com Open Babel (API em processo).",
                 "",
             )
         return ConversionResult(

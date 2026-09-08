@@ -45,9 +45,9 @@ from core.scrolling import ScrollManager
 SCORING_OPTIONS = [
     {
         "key": "vina",
-        "label_pt": "Vina (padrao)",
+        "label_pt": "Vina (padrão)",
         "label_en": "Vina (standard)",
-        "desc_pt": "Funcao padrao. Rapida e amplamente validada.",
+        "desc_pt": "Função padrão. Rápida e amplamente validada.",
         "desc_en": "Standard function. Fast and widely validated.",
         "ref_url": "https://doi.org/10.1002/jcc.21334",
         "ref_label": "Trott & Olson, J. Comput. Chem. 2010",
@@ -59,7 +59,7 @@ SCORING_OPTIONS = [
         "key": "vinardo",
         "label_pt": "Vinardo",
         "label_en": "Vinardo",
-        "desc_pt": "Funcao nativa do AutoDock Vina 1.2.x; alternativa leve para triagem e redocking.",
+        "desc_pt": "Função nativa do AutoDock Vina 1.2.x; alternativa leve para triagem e redocking.",
         "desc_en": "Native AutoDock Vina 1.2.x function; lightweight alternative for screening and redocking.",
         "ref_url": "https://doi.org/10.1371/journal.pone.0155183",
         "ref_label": "Quiroga & Villarreal, PLoS ONE 2016",
@@ -87,7 +87,7 @@ class ScoringFunctionSelector(QGroupBox):
         super().__init__()
         self.lang = "pt"
         self.prefs_path = (
-            Path(__file__).resolve().parents[1] / "config" / "user_prefs.json"
+            EnvironmentManager().user_dir / "config" / "user_prefs.json"
         )
         self.checkboxes: dict[str, QCheckBox] = {}
 

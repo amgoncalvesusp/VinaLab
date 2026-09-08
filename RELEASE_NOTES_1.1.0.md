@@ -1,5 +1,19 @@
 # VinaLab Light 1.1.0
 
+## GUI and preparation refresh (replacement packages)
+
+- Optional Prepare Protein tab now precedes the optional converter and can save PDBQT directly using Meeko.
+- Meeko is the default receptor preparation engine. Alternate conformation A is selected explicitly; incomplete residues are not silently dropped. Open Babel remains an explicit converter choice. MOL2/SDF receptors are read through Open Babel and parameterized with Meeko when residue metadata is suitable.
+- Select multiple ligand files or a screening folder from a single field. Duplicate ligand filenames are rejected to prevent output collisions.
+- Notebook-sized windows, scrollable result panels, and readable scrollable selection menus.
+- 3D Box is the first preview tab and activates when coordinates change. High-contrast box edges replace the obscured surface/wireframe view.
+- Receptor cartoon with only nearby residues highlighted as sticks; protein HETATM records are normalized for display without changing docking input files.
+- Interaction methodology is identified and referenced as MDAnalysis-based geometric heuristics, not PLIP. Polar contacts are no longer mislabeled as confirmed hydrogen bonds.
+- Corrected Brazilian Portuguese accents.
+- Frozen Windows and Linux builds must pass dependency checks, Meeko conversion, and real Vina/Vinardo docking before publication.
+
+This replaces the earlier v1.1.0 packages and remains the latest stable **Light** release. The separate VinaLab 2.x release is unchanged.
+
 VinaLab Light 1.1.0 is a maintenance release driven by user feedback from a peptide-docking study against KPC-2. It fixes the file-preparation, layout, and export problems reported there, and adds co-crystal ligand extraction so a docking box can be centred without leaving the application.
 
 ## Fixed

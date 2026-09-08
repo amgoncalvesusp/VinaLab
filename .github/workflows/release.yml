@@ -83,6 +83,28 @@ jobs:
       - name: Build executable
         run: python -m PyInstaller --noconfirm --clean VinaGUI.spec
 
+      - name: Smoke test frozen Windows runtime
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath dist/VinaLab.exe -ArgumentList '--smoke-test', 'build-smoke' -WindowStyle Hidden -Wait -PassThru
+          Get-Content build-smoke/smoke.json
+          if ($process.ExitCode -ne 0) { throw 'Frozen runtime smoke failed' }
+
+      - name: Smoke test frozen Linux runtime
+        if: runner.os == 'Linux'
+        run: |
+          dist/VinaLab --smoke-test build-smoke || { cat build-smoke/smoke.json; exit 1; }
+          cat build-smoke/smoke.json
+
+      - name: Upload frozen smoke evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-${{ matrix.label }}
+          path: build-smoke/*
+          if-no-files-found: ignore
+
       - name: Install Inno Setup
         if: runner.os == 'Windows'
         run: choco install innosetup --no-progress -y
@@ -155,6 +177,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: release-assets
+          pattern: vinalab-*
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
@@ -163,3 +186,4 @@ jobs:
           files: release-assets/**/*
           overwrite_files: true
           fail_on_unmatched_files: true
+          make_latest: true

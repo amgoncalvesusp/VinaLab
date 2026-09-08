@@ -173,6 +173,9 @@ def parse_pdbqt_atoms(text: str) -> tuple[list[dict], set[tuple[int, int]]]:
 def pdbqt_text_to_view_pdb(text: str, include_conect: bool) -> str:
     """Convert PDBQT text to viewer-safe PDB, preserving coordinates and adding simple ligand CONECT records."""
     atoms, forced_bonds = parse_pdbqt_atoms(text)
+    if not include_conect:
+        amino_acids = set("ALA ARG ASN ASP CYS GLN GLU GLY HIS ILE LEU LYS MET PHE PRO SER THR TRP TYR VAL HID HIE HIP CYX".split())
+        atoms = [{**atom, "record": "ATOM"} if atom["resname"] in amino_acids else atom for atom in atoms]
     output_lines = [_format_view_pdb_atom(atom) for atom in atoms]
     if include_conect:
         output_lines.extend(_infer_conect_records(atoms, forced_bonds))
@@ -430,7 +433,7 @@ def build_pose_view_html(
   <div id="viewer"></div>
   <div id="error">Erro ao carregar visualização 3D. Verifique os arquivos de entrada.</div>
   <div id="label">{ligand_name}</div>
-  <div id="hint">Ligante: bastões ciano | resíduos próximos do receptor: bastões verdes | receptor: cartoon + superfície transparente</div>
+  <div id="hint">Ligante: bastões ciano | resíduos próximos: bastões verdes | receptor: cartoon</div>
   <script>
     const receptorPdb = {json.dumps(receptor_text)};
     const ligandPdb = {json.dumps(pose_text)};
@@ -449,24 +452,27 @@ def build_pose_view_html(
       viewer = $3Dmol.createViewer("viewer", {{backgroundColor: "#0b0d12"}});
       const receptorModel = viewer.addModel(receptorPdb, "pdb");
       ligandModel = viewer.addModel(ligandPdb, "pdb");
-      receptorModel.setStyle({{}}, {{cartoon: {{color: "spectrum", opacity: 0.85}}}});
+      receptorModel.setStyle({{}}, {{cartoon: {{color: "spectrum"}}}});
       ligandModel.setStyle({{}}, {{
         stick: {{colorscheme: "cyanCarbon", radius: 0.23}},
         sphere: {{scale: 0.23, colorscheme: "cyanCarbon"}}
       }});
       try {{
-        viewer.addStyle({{model: receptorModel, within: {{distance: 4.0, sel: {{model: ligandModel}}}}}}, {{
+        const ligandAtoms = ligandModel.selectedAtoms({{}});
+        const nearbyResidues = new Set();
+        receptorModel.selectedAtoms({{}}).forEach(atom => {{
+          if (ligandAtoms.some(lig => (atom.x-lig.x)**2 + (atom.y-lig.y)**2 + (atom.z-lig.z)**2 <= 16))
+            nearbyResidues.add(atom.chain + ':' + atom.resi + ':' + (atom.icode || ''));
+        }});
+        receptorModel.setStyle({{predicate: atom => nearbyResidues.has(atom.chain + ':' + atom.resi + ':' + (atom.icode || ''))}}, {{
           stick: {{colorscheme: "greenCarbon", radius: 0.14}}
-        }});
-        viewer.addSurface($3Dmol.SurfaceType.VDW, {{opacity: 0.16, color: "white"}}, {{
-          model: receptorModel, within: {{distance: 6.0, sel: {{model: ligandModel}}}}
-        }});
+        }}, true);
       }} catch (error) {{
         console.log("Interaction overlay skipped:", error);
       }}
       {highlight_js}
       {box_js}
-      viewer.zoomTo({{model: ligandModel}});
+      viewer.zoomTo();
       viewer.render();
       }} catch (error) {{
         showViewerError(error);
@@ -512,8 +518,8 @@ def build_box_preview_html(receptor_path: Path | None, box: dict | None, lang: s
     box_js = _box_preview_js(box)
     has_receptor = bool(receptor_text.strip())
     status = _box_status_label(box, lang)
-    hint = ("Caixa: linhas amarelas | centro: esfera amarela | receptor: cartoon e superficie"
-            if lang == "pt" else "Box: yellow wireframe | center: yellow sphere | receptor: cartoon and surface")
+    hint = ("Caixa: arestas amarelas | centro: esfera amarela | receptor: cartoon"
+            if lang == "pt" else "Box: yellow edges | center: yellow sphere | receptor: cartoon")
     return f"""<!doctype html>
 <html>
 <head>
@@ -542,19 +548,14 @@ def build_box_preview_html(receptor_path: Path | None, box: dict | None, lang: s
     const receptorPdb = {json.dumps(receptor_text)};
     function renderBox() {{
       if (typeof $3Dmol === "undefined") {{
-        document.getElementById("label").textContent = {json.dumps("3Dmol.js indisponivel" if lang == "pt" else "3Dmol.js unavailable")};
+        document.getElementById("label").textContent = {json.dumps("3Dmol.js indisponível" if lang == "pt" else "3Dmol.js unavailable")};
         return;
       }}
       const viewer = $3Dmol.createViewer("viewer", {{backgroundColor: "#0b0d12"}});
       let receptorModel = null;
       if ({json.dumps(has_receptor)}) {{
         receptorModel = viewer.addModel(receptorPdb, "pdb");
-        receptorModel.setStyle({{}}, {{cartoon: {{color: "spectrum", opacity: 0.78}}}});
-        try {{
-          viewer.addSurface($3Dmol.SurfaceType.VDW, {{opacity: 0.12, color: "white"}}, {{model: receptorModel}});
-        }} catch (error) {{
-          console.log("Surface skipped:", error);
-        }}
+        receptorModel.setStyle({{}}, {{cartoon: {{color: "spectrum"}}}});
       }}
       {box_js}
       viewer.zoomTo();
@@ -570,7 +571,7 @@ def build_box_preview_html(receptor_path: Path | None, box: dict | None, lang: s
 def _box_status_label(box: dict | None, lang: str = "pt") -> str:
     """Return a compact label for current search-box parameters."""
     if not box:
-        return "Caixa nao definida" if lang == "pt" else "Box not defined"
+        return "Caixa não definida" if lang == "pt" else "Box not defined"
     center = (
         float(box.get("center_x", 0.0)),
         float(box.get("center_y", 0.0)),
@@ -583,7 +584,7 @@ def _box_status_label(box: dict | None, lang: str = "pt") -> str:
     )
     return (
         f"{'Centro' if lang == 'pt' else 'Center'} {center[0]:.2f}, {center[1]:.2f}, {center[2]:.2f} | "
-        f"{'Tamanho' if lang == 'pt' else 'Size'} {size[0]:.1f} x {size[1]:.1f} x {size[2]:.1f} A"
+        f"{'Tamanho' if lang == 'pt' else 'Size'} {size[0]:.1f} x {size[1]:.1f} x {size[2]:.1f} Å"
     )
 
 
@@ -631,8 +632,8 @@ def _interaction_highlight_js(highlights: list[dict]) -> str:
     """Return JavaScript statements that color highlighted receptor residues."""
     statements: list[str] = []
     color_by_type = {
-        "H-bond": "dodgerblue",
-        "Hydrophobic": "orange",
+        "Polar contact": "dodgerblue",
+        "Hydrophobic candidate": "orange",
         "Contact": "lightgray",
     }
     for item in highlights:
@@ -640,10 +641,11 @@ def _interaction_highlight_js(highlights: list[dict]) -> str:
         if not resi:
             continue
         color = color_by_type.get(str(item.get("interaction_type", "")), "lightgray")
+        chain, separator, number = resi.partition(":")
+        selection = {"chain": chain, "resi": number} if separator else {"resi": resi}
         statements.append(
-            "viewer.addStyle({model: receptorModel, resi: "
-            f"{json.dumps(resi)}"
-            f"}}, {{stick: {{color: {json.dumps(color)}, radius: 0.20}}}});"
+            f"receptorModel.setStyle({json.dumps(selection)}, "
+            f"{{stick: {{color: {json.dumps(color)}, radius: 0.20}}}}, true);"
         )
     return "\n      ".join(statements)
 
@@ -662,11 +664,14 @@ def _box_preview_js(box: dict | None) -> str:
         "h": float(box.get("size_y", 20.0)),
         "d": float(box.get("size_z", 20.0)),
     }
-    return (
-        "viewer.addBox({"
-        f"center: {json.dumps(center)}, "
-        f"dimensions: {json.dumps(dimensions)}, "
-        'color: "#C8922A", opacity: 0.95, wireframe: true'
-        "});\n"
-        f"viewer.addSphere({{center: {json.dumps(center)}, radius: 0.35, color: '#C8922A'}});"
-    )
+    corners = [dict(x=center["x"] + x * dimensions["w"] / 2,
+                    y=center["y"] + y * dimensions["h"] / 2,
+                    z=center["z"] + z * dimensions["d"] / 2)
+               for x in (-1, 1) for y in (-1, 1) for z in (-1, 1)]
+    edges = [(corners[index], corners[index ^ bit])
+             for index in range(8) for bit in (1, 2, 4) if index < (index ^ bit)]
+    return "\n".join(
+        "viewer.addCylinder({start: " + json.dumps(start) + ", end: " + json.dumps(end)
+        + ", radius: 0.10, color: '#FFD43B', fromCap: 1, toCap: 1});"
+        for start, end in edges
+    ) + f"\nviewer.addSphere({{center: {json.dumps(center)}, radius: 0.35, color: '#FFD43B'}});"

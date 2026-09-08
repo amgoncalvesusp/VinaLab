@@ -71,8 +71,8 @@ class MainWindow(QMainWindow):
         self.docking_workspace.setStretchFactor(1, 2)
         self.docking_workspace.setChildrenCollapsible(False)
 
-        self.tabs.addTab(self.converter_tab, "")
         self.tabs.addTab(self.prepare_protein_tab, "")
+        self.tabs.addTab(self.converter_tab, "")
         self.tabs.addTab(self.docking_workspace, "")
         self.tabs.addTab(self.report_tab, "")
         self.tabs.setMinimumWidth(340)
@@ -167,8 +167,8 @@ class MainWindow(QMainWindow):
         self.lang = lang
         I18n.save_lang(self.lang, str(self.prefs_path))
         self.setWindowTitle(I18n.get("window_title", self.lang))
-        self.tabs.setTabText(0, I18n.get("tab_converter", self.lang))
-        self.tabs.setTabText(1, I18n.get("tab_prepare_protein", self.lang))
+        self.tabs.setTabText(0, I18n.get("tab_prepare_protein", self.lang))
+        self.tabs.setTabText(1, I18n.get("tab_converter", self.lang))
         self.tabs.setTabText(2, I18n.get("tab_docking", self.lang))
         self.tabs.setTabText(3, I18n.get("tab_report", self.lang))
         self.setup_tab.retranslate_ui(self.lang)
@@ -285,7 +285,7 @@ class MainWindow(QMainWindow):
 
     def _active_tab_changed(self, index: int) -> None:
         """Update help panel context when the active tab changes."""
-        keys = ["tab_converter", "tab_prepare_protein", "tab_docking", "tab_report"]
+        keys = ["tab_prepare_protein", "tab_converter", "tab_docking", "tab_report"]
         if 0 <= index < len(keys):
             self.help_panel.set_context(keys[index], self.lang)
 
@@ -314,6 +314,9 @@ class MainWindow(QMainWindow):
         pre-fill the converter input and switch to the converter tab so the user
         can review, choose 'Receptor (proteína)', and run conversion.
         """
+        if Path(filepath).suffix.lower() == ".pdbqt":
+            self._use_converted_file(filepath, "receptor")
+            return
         self.converter_tab.input_paths = [Path(filepath)]
         self.converter_tab.input_edit.setText(str(Path(filepath)))
         self.converter_tab.type_combo.setCurrentIndex(1)
@@ -346,6 +349,14 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:
         """Ask the user to confirm before closing the application."""
+        workers = (self.converter_tab.worker, self.prepare_protein_tab._conversion_worker,
+                   self.docking_tab.worker)
+        if any(worker is not None and worker.isRunning() for worker in workers):
+            QMessageBox.warning(self, "VinaLab Light",
+                "Aguarde a conclusão da conversão ou cancele o docking antes de sair."
+                if self.lang == "pt" else "Wait for conversion or cancel docking before exiting.")
+            event.ignore()
+            return
         reply = QMessageBox.question(
             self,
             I18n.get("mw_exit_title", self.lang),

@@ -273,9 +273,17 @@ class ResultsTab(QWidget):
             I18n.get("export_interaction_table", lang)
         )
         self.cluster_export_button.setText(I18n.get("export_best_cluster", lang))
-        self.preview_tabs.setTabText(0, I18n.get("results_table", lang))
-        if self.preview_tabs.count() > 1:
-            self.preview_tabs.setTabText(1, I18n.get("interactions", lang))
+        self.preview_tabs.setTabText(self._side_tab_index(self.results_panel), I18n.get("results_table", lang))
+        self.preview_tabs.setTabText(self._side_tab_index(self.interaction_widget), I18n.get("interactions", lang))
+        self.interaction_method.setText(
+            ("Método: contatos geométricos com MDAnalysis (não PLIP). Corte selecionado para contatos; "
+             "C–C ≤ 4 Å: candidatos hidrofóbicos; N/O/S ≤ 3,5 Å: contatos polares, não ligações de hidrogênio confirmadas. "
+             "Sem atribuição química de doador/aceptor. " if lang == "pt" else
+             "Method: geometric contacts with MDAnalysis (not PLIP). Selected cutoff for contacts; "
+             "C–C ≤ 4 Å: hydrophobic candidates; N/O/S ≤ 3.5 Å: polar contacts, not confirmed hydrogen bonds. "
+             "No chemical donor/acceptor assignment. ")
+            + '<a href="https://www.mdanalysis.org/citations/">Michaud-Agrawal et al. (2011); Gowers et al. (2016)</a>'
+        )
         box_index = self._side_tab_index(self.box_preview_view)
         if box_index >= 0:
             self.preview_tabs.setTabText(box_index, I18n.get("box_3d_view", lang))
@@ -404,6 +412,10 @@ class ResultsTab(QWidget):
         self.interaction_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         ScrollManager.optimize(self.interaction_table)
         interaction_layout.addLayout(interaction_controls)
+        self.interaction_method = QLabel()
+        self.interaction_method.setWordWrap(True)
+        self.interaction_method.setOpenExternalLinks(True)
+        interaction_layout.addWidget(self.interaction_method)
         interaction_layout.addWidget(self.interaction_table, stretch=1)
 
         consensus_layout = QVBoxLayout(self.consensus_widget)
@@ -487,14 +499,14 @@ class ResultsTab(QWidget):
         cluster_chart_widget.setMinimumHeight(320)
         clusters_layout.addWidget(cluster_chart_widget, stretch=3)
 
-        self.preview_tabs.addTab(results_panel, I18n.get("results_table", self.lang))
-        self.preview_tabs.addTab(
-            interaction_widget, I18n.get("interactions", self.lang)
-        )
         if self.box_preview_view is not None:
             self.preview_tabs.addTab(
                 self.box_preview_view, I18n.get("box_3d_view", self.lang)
             )
+        self.results_panel = ScrollManager.wrap(results_panel)
+        self.interaction_widget = ScrollManager.wrap(interaction_widget)
+        self.preview_tabs.addTab(self.results_panel, I18n.get("results_table", self.lang))
+        self.preview_tabs.addTab(self.interaction_widget, I18n.get("interactions", self.lang))
         if self.preview_view is not None:
             self.preview_tabs.addTab(
                 self.preview_view, I18n.get("pose_3d_view", self.lang)
@@ -586,7 +598,7 @@ class ResultsTab(QWidget):
                     item.setText({
                         "Pass": "Aprovada" if self.lang == "pt" else "Pass",
                         "Fail": "Reprovada" if self.lang == "pt" else "Fail",
-                        "Not comparable": "RMSD indisponivel" if self.lang == "pt" else "RMSD unavailable",
+                        "Not comparable": "RMSD indisponível" if self.lang == "pt" else "RMSD unavailable",
                     }.get(str(value), str(value)))
                     item.setToolTip(str(row.get("reference_rmsd_status", "")))
                     validation_color = {
@@ -853,6 +865,8 @@ class ResultsTab(QWidget):
         """Store current box parameters and refresh the 3D box preview."""
         self.current_box = dict(box)
         self._refresh_box_preview()
+        if self.box_preview_view is not None:
+            self.preview_tabs.setCurrentWidget(self.box_preview_view)
 
     def update_receptor_preview(self, receptor_path: "Path | None") -> None:
         """Store the receptor path for PyMOL and box visualization."""
@@ -1075,7 +1089,7 @@ class ResultsTab(QWidget):
                 add_interaction(
                     rec_atom,
                     lig_atom,
-                    "Hydrophobic",
+                "Hydrophobic candidate",
                     float(distances[rec_index, lig_index]),
                 )
 
@@ -1088,15 +1102,11 @@ class ResultsTab(QWidget):
                 or self._atom_element(lig_atom) not in polar_elements
             ):
                 continue
-            angle = self._estimate_hbond_angle(rec_atom, lig_atom)
             add_interaction(
                 rec_atom,
                 lig_atom,
-                "H-bond",
+                "Polar contact",
                 float(distances[rec_index, lig_index]),
-                donor=self._atom_label(lig_atom),
-                acceptor=self._atom_label(rec_atom),
-                angle=angle,
             )
 
         return sorted(
@@ -1210,6 +1220,7 @@ class ResultsTab(QWidget):
         """Return residue name/number for a receptor atom."""
         return (
             str(getattr(atom, "resname", "") or "").strip(),
+            str(getattr(atom, "chainID", "") or "").strip() + ":" +
             str(getattr(atom, "resid", "") or "").strip(),
         )
 

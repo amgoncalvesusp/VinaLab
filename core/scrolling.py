@@ -8,12 +8,24 @@ from PySide6.QtWidgets import (
     QAbstractScrollArea,
     QApplication,
     QComboBox,
+    QListView,
+    QLayout,
+    QStyledItemDelegate,
     QFrame,
     QAbstractSpinBox,
     QScrollArea,
     QSizePolicy,
     QWidget,
 )
+
+
+class SelectionDelegate(QStyledItemDelegate):
+    """Keep popup rows readable independently of the platform menu style."""
+
+    def sizeHint(self, option, index):
+        size = super().sizeHint(option, index)
+        size.setHeight(max(28, size.height()))
+        return size
 
 
 class WheelGuard(QObject):
@@ -37,6 +49,24 @@ class WheelGuard(QObject):
         parameter never changes by accident. Values are still editable by
         clicking and typing or using the up/down buttons.
         """
+        if event.type() == QEvent.Type.Polish and isinstance(obj, QComboBox):
+            view = QListView(obj)
+            view.setItemDelegate(SelectionDelegate(view))
+            view.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+            view.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+            view.setUniformItemSizes(True)
+            obj.setView(view)
+            obj.setMaxVisibleItems(10)
+        if event.type() == QEvent.Type.Show and isinstance(obj, QListView):
+            parent = obj.parentWidget()
+            while parent is not None and not isinstance(parent, QComboBox):
+                parent = parent.parentWidget()
+            if isinstance(parent, QComboBox) and parent.count():
+                metrics = obj.fontMetrics()
+                width = max(metrics.horizontalAdvance(parent.itemText(i)) for i in range(parent.count())) + 56
+                obj.setMinimumWidth(max(parent.width(), min(width, 600)))
+                rows = min(parent.count(), parent.maxVisibleItems())
+                obj.setMinimumHeight(rows * max(36, obj.sizeHintForRow(0)) + 12)
         if event.type() == QEvent.Type.Wheel and isinstance(
             obj, (QAbstractSpinBox, QComboBox)
         ):
@@ -72,6 +102,8 @@ class ScrollManager:
         scroll_area = QScrollArea()
         scroll_area.setObjectName(object_name)
         scroll_area.setWidgetResizable(True)
+        if content.layout() is not None:
+            content.layout().setSizeConstraint(QLayout.SetMinAndMaxSize)
         scroll_area.setWidget(content)
         scroll_area.setFrameShape(QFrame.NoFrame)
         # Always show both bars so there is a draggable handle at all times.

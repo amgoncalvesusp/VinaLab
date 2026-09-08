@@ -29,13 +29,15 @@ class ConversionWorker(QThread):
     log_signal = Signal(str)
 
     def __init__(
-        self, input_paths: list[Path], output_target: Path, molecule_type: str
+        self, input_paths: list[Path], output_target: Path, molecule_type: str,
+        backend: str = "meeko",
     ) -> None:
         """Initialize the worker with conversion paths and molecule type."""
         super().__init__()
         self.input_paths = list(input_paths)
         self.output_target = output_target
         self.molecule_type = molecule_type
+        self.backend = backend
 
     def run(self) -> None:
         """Execute all requested conversions and emit a list of results."""
@@ -43,13 +45,14 @@ class ConversionWorker(QThread):
         output_is_folder = (
             len(self.input_paths) > 1 or self.output_target.suffix.lower() != ".pdbqt"
         )
-        if output_is_folder:
-            self.output_target.mkdir(parents=True, exist_ok=True)
-
         for input_path in self.input_paths:
             output_path = self._output_path_for(input_path, output_is_folder)
             self.log_signal.emit(f"Convertendo {input_path.name} -> {output_path.name}")
-            result = self._convert_one(input_path, output_path)
+            try:
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                result = self._convert_one(input_path, output_path)
+            except Exception as exc:
+                result = ConversionResult(False, output_path, "", f"Falha na conversão: {exc}")
             if result.log:
                 self.log_signal.emit(result.log)
             if result.errors:
@@ -85,6 +88,13 @@ class ConversionWorker(QThread):
         if detected == "unknown":
             return ConversionResult(
                 False, output_path, "", "Formato de arquivo não reconhecido."
+            )
+        if self.backend == "openbabel":
+            if self.molecule_type == "ligand":
+                return FileConverter._convert_ligand_via_obabel(input_path, output_path)
+            return FileConverter._convert_via_openbabel(
+                input_path, output_path, self.molecule_type == "receptor",
+                "Open Babel selecionado explicitamente pelo usuário.",
             )
         if self.molecule_type == "receptor":
             if detected == "pdb":
@@ -138,6 +148,10 @@ class ConverterWidget(QWidget):
         self.input_button = QPushButton()
         self.output_button = QPushButton()
         self.type_combo = QComboBox()
+        self.backend_combo = QComboBox()
+        self.backend_combo.addItem("Meeko", "meeko")
+        self.backend_combo.addItem("Open Babel", "openbabel")
+        self.backend_label = QLabel()
         self.dep_label = QLabel()
         self.dep_row = QHBoxLayout()
         self.convert_button = QPushButton()
@@ -152,6 +166,12 @@ class ConverterWidget(QWidget):
     def retranslate_ui(self, lang: str) -> None:
         """Retranslate converter panel labels."""
         self.lang = lang
+        self.backend_label.setText("Preparação PDBQT" if lang == "pt" else "PDBQT preparation")
+        self.backend_combo.setItemText(0, "Meeko (padrão)" if lang == "pt" else "Meeko (default)")
+        self.backend_combo.setToolTip(
+            "Meeko usa a conformação alternativa A do receptor. Resíduos incompletos não são removidos automaticamente."
+            if lang == "pt" else "Meeko uses receptor alternate conformation A. Incomplete residues are not removed automatically."
+        )
         self.title_label.setText(I18n.get("converter_title", lang))
         self.subtitle_label.setText(I18n.get("converter_subtitle", lang))
         self.note_label.setText(I18n.get("converter_pdbqt_note", lang))
@@ -208,7 +228,8 @@ class ConverterWidget(QWidget):
             f"{I18n.get('convert_button', self.lang)}: {len(self.input_paths)} arquivo(s)"
         )
         self.convert_button.setEnabled(False)
-        self.worker = ConversionWorker(self.input_paths, output_target, molecule_type)
+        self.worker = ConversionWorker(self.input_paths, output_target, molecule_type,
+                                       self.backend_combo.currentData())
         self.worker.log_signal.connect(self.log_console.append)
         self.worker.finished_signal.connect(self._conversion_finished)
         self.worker.start()
@@ -238,6 +259,10 @@ class ConverterWidget(QWidget):
         type_row.addWidget(self.type_label)
         type_row.addWidget(self.type_combo)
         layout.addLayout(type_row)
+        backend_row = QHBoxLayout()
+        backend_row.addWidget(self.backend_label)
+        backend_row.addWidget(self.backend_combo)
+        layout.addLayout(backend_row)
         layout.addLayout(
             self._file_row(self.output_label, self.output_edit, self.output_button)
         )

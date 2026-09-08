@@ -16,6 +16,7 @@ from PyInstaller.utils.hooks import collect_all
 # RDKit/Meeko frozen.
 binaries = []
 hiddenimports = [
+    "py3Dmol",
     "scipy",
     "gemmi",
     "openbabel",
