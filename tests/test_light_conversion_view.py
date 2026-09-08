@@ -1,6 +1,11 @@
 """Conversion identity and molecular rendering regressions."""
 
 from unittest.mock import patch
+import os
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+from PySide6.QtWidgets import QApplication
+
+APP = QApplication.instance() or QApplication([])
 
 from core.converter import ConversionResult, FileConverter
 from tabs.results_view import _box_preview_js, pdbqt_text_to_view_pdb, build_pose_view_html
@@ -68,3 +73,15 @@ def test_preparation_direct_pdbqt_uses_meeko_worker(tmp_path):
         target = worker.call_args.args[1]
         tab._pdbqt_finished([ConversionResult(True, target, "Meeko", "")])
     assert received == [str(tmp_path / "prepared.pdbqt")]
+
+
+def test_analysis_headers_do_not_shrink_to_fit_notebooks():
+    from PySide6.QtWidgets import QApplication, QHeaderView
+    from tabs.results_tab import ResultsTab
+    app = QApplication.instance() or QApplication([])
+    with patch("tabs.results_tab.QWebEngineView", None):
+        tab = ResultsTab()
+    for table in (tab.interaction_table, tab.consensus_table, tab.cluster_table):
+        if table.columnCount() == 0:
+            table.setColumnCount(1)
+        assert table.horizontalHeader().sectionResizeMode(0) == QHeaderView.ResizeToContents

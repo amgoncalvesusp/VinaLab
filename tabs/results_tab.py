@@ -407,7 +407,7 @@ class ResultsTab(QWidget):
         )
         apply_header_tooltips(self.interaction_table)
         self.interaction_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.Stretch
+            QHeaderView.ResizeToContents
         )
         self.interaction_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         ScrollManager.optimize(self.interaction_table)
@@ -424,7 +424,7 @@ class ResultsTab(QWidget):
         consensus_hint.setObjectName("label_muted")
         self.consensus_table.setSortingEnabled(True)
         self.consensus_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.Stretch
+            QHeaderView.ResizeToContents
         )
         self.consensus_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         ScrollManager.optimize(self.consensus_table)
@@ -487,7 +487,7 @@ class ResultsTab(QWidget):
             ]
         )
         apply_header_tooltips(self.cluster_table)
-        self.cluster_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.cluster_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.cluster_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.cluster_table.cellClicked.connect(self._cluster_row_clicked)
         ScrollManager.optimize(self.cluster_table)
