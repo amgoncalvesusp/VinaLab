@@ -72,6 +72,8 @@ The Debian package installs the application under `/opt/vinalab`, registers a de
 
 Light 1.1.1 fixes long-header PDB detection, displaced element columns from overflowing occupancy fields, charged MOL2 parsing, and residue grouping in receptor MOL2/SDF imports. Meeko remains the default PDBQT preparation engine. Open Babel can read MOL2/SDF intermediates without replacing Meeko parameterization. Declared 2D ligand inputs are embedded with RDKit ETKDGv3 on the Meeko path; explicit Open Babel preparation rejects non-3D SDF inputs rather than exporting flat structures.
 
+Packaged builds include Open Babel format plugins and the native executable, not a Python console-script launcher that relies on the build machine's Python installation.
+
 Conversions validate atom types, finite coordinates/charges, and ligand geometry through Meeko atom maps before publishing output. Inputs and previous successful outputs are preserved on failure. Duplicate output names are rejected in batch conversion, and only successful files are handed to docking.
 
 Meeko macrocycle closure types are preserved for Vina docking. PDB/MOL2 exports omit nonphysical ring-closure dummy atoms; PDBQT pose exports retain them for the docking representation. See the [AutoDock Vina macrocycle protocol](https://autodock-vina.readthedocs.io/en/stable/docking_macrocycle.html).

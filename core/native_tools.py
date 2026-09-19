@@ -28,6 +28,11 @@ def find_native_executable(
 def find_obabel_executable() -> Path | None:
     """Return the Open Babel CLI bundled with the app or available on PATH."""
     names = ("obabel.exe", "obabel") if sys.platform.startswith("win") else ("obabel",)
+    for root in _openbabel_roots():
+        for name in names:
+            candidate = root / "bin" / name
+            if candidate.is_file():
+                return candidate
     return find_native_executable(names, "openbabel")
 
 

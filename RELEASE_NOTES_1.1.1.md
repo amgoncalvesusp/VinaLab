@@ -13,6 +13,7 @@ Corrective stable release of the Light edition, focused on molecular preparation
 - Preserve Meeko macrocycle closure types for docking and omit nonphysical closure dummy atoms from PDB/MOL2 exports.
 - Pass only successfully converted files to docking.
 - Fix PDB/MOL2 exports on Unicode paths and detect empty or incomplete Open Babel results.
+- Bundle Linux Open Babel format plugins explicitly and prefer the actual native CLI over the pip Python launcher on both platforms. Check `openbabel.pybel` in the packaged runtime.
 - Export complete receptor-pose MOL2 complexes, with separate component topology perception, preserved coordinates and atom counts. PDB complexes remain available for PDB/PDBQT pose exports.
 
 ## Included

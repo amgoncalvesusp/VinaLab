@@ -46,6 +46,12 @@ datas = [
 
 def find_build_obabel():
     names = ("obabel.exe", "obabel") if sys.platform.startswith("win") else ("obabel",)
+    spec = importlib.util.find_spec("openbabel")
+    if spec and spec.origin:
+        for name in names:
+            candidate = Path(spec.origin).parent / "bin" / name
+            if candidate.is_file():
+                return str(candidate)
     scripts_dir = Path(sys.executable).resolve().parent
     for name in names:
         candidate = scripts_dir / name
@@ -183,6 +189,8 @@ import importlib.util as _importlib_util
 
 _openbabel_spec = _importlib_util.find_spec("openbabel")
 if _openbabel_spec is not None and _openbabel_spec.origin:
+    from scripts.openbabel_bundle import plugin_binaries
+    binaries += plugin_binaries(Path(_openbabel_spec.origin).parent)
     _openbabel_libs = os.path.join(
         os.path.dirname(os.path.dirname(_openbabel_spec.origin)),
         "openbabel_wheel.libs",

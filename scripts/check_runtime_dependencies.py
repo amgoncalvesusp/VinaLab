@@ -27,6 +27,7 @@ REQUIRED_IMPORTS = [
     "gemmi",
     "rdkit",
     "openbabel",
+    "openbabel.pybel",
     "prody",
     "Bio",
     "MDAnalysis",
