@@ -24,6 +24,7 @@ import sys
 from threading import Lock
 
 from core.file_utils import validate_ligand_pdbqt
+from core.conversion_io import atomic_conversion, validate_prepared_pdbqt
 from core.native_tools import find_obabel_executable, native_tool_env
 
 logger = logging.getLogger(__name__)
@@ -50,9 +51,7 @@ class FileConverter:
     def _detect_format(filepath: Path) -> str:
         """Detect pdb, mol2, pdbqt, or unknown from file contents."""
         try:
-            lines = filepath.read_text(encoding="utf-8", errors="replace").splitlines()[
-                :40
-            ]
+            lines = filepath.read_text(encoding="utf-8", errors="replace").splitlines()
         except OSError:
             return "unknown"
         text = "\n".join(lines).lower()
@@ -76,8 +75,8 @@ class FileConverter:
                     return "pdbqt"
                 # PDBQT carries a partial charge in the fixed-width columns 67-76;
                 # a plain PDB record leaves that column blank (element sits in 77-78).
-                charge_field = line[66:76].strip()
-                if charge_field and _is_float(charge_field):
+                charge_field = line[70:76].strip()
+                if filepath.suffix.lower() == ".pdbqt" or (charge_field and _is_float(charge_field)):
                     return "pdbqt"
                 return "pdb"
         return "unknown"
@@ -99,6 +98,7 @@ class FileConverter:
         )
 
     @staticmethod
+    @atomic_conversion("ligand")
     def _convert_ligand_rdkit_meeko(
         input_path: Path, output_path: Path, input_format: str
     ) -> ConversionResult:
@@ -115,8 +115,9 @@ class FileConverter:
         multi_note = FileConverter._multi_molecule_note(input_path, input_format)
 
         try:
+            source_text = input_path.read_text(encoding="utf-8-sig")
             if input_format == "mol2":
-                mol = Chem.MolFromMol2File(str(input_path), removeHs=False)
+                mol = Chem.MolFromMol2Block(source_text, removeHs=False)
                 if mol is None:
                     mol = FileConverter._mol2_fallback_via_molblock(input_path)
                 if mol is None:
@@ -125,10 +126,13 @@ class FileConverter:
                         "está bem formado ou converta para SDF/PDB antes de continuar."
                     )
             elif input_format == "sdf":
-                supplier = Chem.SDMolSupplier(str(input_path), removeHs=False)
-                mol = next((m for m in supplier if m is not None), None)
+                supplier = Chem.SDMolSupplier()
+                supplier.SetData(source_text, removeHs=False)
+                mol = next(iter(supplier), None)
             else:
-                mol = Chem.MolFromPDBFile(str(input_path), removeHs=False)
+                from core.receptor_input import normalize_receptor_pdb
+                pdb_text, _ = normalize_receptor_pdb(source_text)
+                mol = Chem.MolFromPDBBlock(pdb_text, removeHs=False)
             if mol is None:
                 raise ValueError(
                     f"RDKit não conseguiu interpretar o ligante {input_format.upper()}."
@@ -146,23 +150,20 @@ class FileConverter:
                 Chem.SanitizeMol(mol)
                 AllChem.ComputeGasteigerCharges(mol)
                 if FileConverter._has_nan_charges(mol):
-                    FileConverter._sanitize_nan_charges(mol)
+                    raise ValueError("Não foi possível calcular cargas Gasteiger finitas; revise a química do ligante.")
 
             preparator = MoleculePreparation()
             setups = preparator.prepare(mol)
             FileConverter._remove_stale_output(output_path)
-            if hasattr(preparator, "write_pdbqt_file"):
-                preparator.write_pdbqt_file(str(output_path))
-            else:
-                if not setups:
-                    raise ValueError("Meeko não retornou setups para o ligante.")
-                pdbqt_text, ok, error_msg = PDBQTWriterLegacy.write_string(setups[0])
-                if not ok:
-                    raise ValueError(error_msg)
-                output_path.write_text(pdbqt_text, encoding="utf-8")
+            if not setups:
+                raise ValueError("Meeko não retornou setups para o ligante.")
+            pdbqt_text, ok, error_msg = PDBQTWriterLegacy.write_string(setups[0], add_index_map=True)
+            if not ok:
+                raise ValueError(error_msg)
+            output_path.write_text(pdbqt_text, encoding="utf-8")
 
             pre_stats = FileConverter._bond_length_stats(mol)
-            post_stats = FileConverter._bond_length_stats_from_pdbqt(output_path, mol)
+            post_stats = "coordenadas dos átomos pesados verificadas pelo mapa de átomos Meeko"
             message = (
                 f"Ligante {input_format.upper()} convertido com RDKit + Meeko "
                 "(cargas Gasteiger)."
@@ -247,81 +248,13 @@ class FileConverter:
 
     @staticmethod
     def _mol2_fallback_via_molblock(input_path: Path):
-        """Retry MOL2 parsing by stripping MOL2 headers and reading remaining block via RDKit.
+        """Read unsupported MOL2 variants with Open Babel, preserving formal charges."""
+        from rdkit import Chem
+        from openbabel import pybel
 
-        When RDKit's MOL2 parser fails (common with certain Gaussian/Sybyl variants),
-        attempt to extract the atom and bond tables and pass them as a synthetic MOL
-        block. Returns an RDKit Mol or None.
-        """
-        try:
-            from rdkit import Chem
-        except ImportError:
-            return None
-        try:
-            raw = input_path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            return None
-        sections: dict[str, list[str]] = {}
-        current: str | None = None
-        for line in raw.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("@<TRIPOS>"):
-                current = stripped.split("@<TRIPOS>", 1)[1].strip().upper()
-                sections[current] = []
-                continue
-            if current is not None:
-                sections[current].append(line)
-        atoms = sections.get("ATOM", [])
-        bonds = sections.get("BOND", [])
-        if not atoms:
-            return None
-        mol_lines: list[str] = [
-            "",
-            "  VinaLab MOL2 fallback",
-            "",
-            f"{len(atoms):>3}{len(bonds):>3}  0  0  0  0  0  0  0  0999 V2000",
-        ]
-        for atom_line in atoms:
-            tokens = atom_line.split()
-            if len(tokens) < 6:
-                return None
-            try:
-                x = float(tokens[2])
-                y = float(tokens[3])
-                z = float(tokens[4])
-            except ValueError:
-                return None
-            symbol = (
-                "".join(ch for ch in tokens[5].split(".")[0] if ch.isalpha()) or "C"
-            )
-            mol_lines.append(
-                f"{x:10.4f}{y:10.4f}{z:10.4f} {symbol:<3} 0  0  0  0  0  0  0  0  0  0  0  0"
-            )
-        for bond_line in bonds:
-            tokens = bond_line.split()
-            if len(tokens) < 4:
-                continue
-            try:
-                begin = int(tokens[1])
-                end = int(tokens[2])
-            except ValueError:
-                continue
-            bond_order_token = tokens[3]
-            order_map = {
-                "1": 1,
-                "2": 2,
-                "3": 3,
-                "ar": 4,
-                "am": 1,
-                "du": 1,
-                "un": 1,
-                "nc": 1,
-            }
-            order = order_map.get(bond_order_token.lower(), 1)
-            mol_lines.append(f"{begin:>3}{end:>3}{order:>3}  0  0  0  0")
-        mol_lines.append("M  END")
-        mol_block = "\n".join(mol_lines) + "\n"
-        return Chem.MolFromMolBlock(mol_block, removeHs=False, sanitize=False)
+        molecule = pybel.readstring("mol2", input_path.read_text(encoding="utf-8"))
+        return Chem.MolFromMolBlock(molecule.write("mol"), removeHs=False)
+
 
     @staticmethod
     def _prepare_ligand_molecule(mol) -> tuple[object, str]:
@@ -350,14 +283,17 @@ class FileConverter:
         Chem.Kekulize(working, clearAromaticFlags=False)
         working = Chem.AddHs(working, addCoords=True)
 
-        if working.GetNumConformers() == 0:
+        if working.GetNumConformers() == 0 or not working.GetConformer().Is3D():
+            working.RemoveAllConformers()
             params = AllChem.ETKDGv3()
             params.randomSeed = 61453
             if AllChem.EmbedMolecule(working, params) != 0:
                 raise ValueError(
                     "RDKit não conseguiu gerar coordenadas 3D para o ligante."
                 )
-            AllChem.MMFFOptimizeMolecule(working, maxIters=200)
+            if AllChem.MMFFHasAllMoleculeParams(working):
+                AllChem.MMFFOptimizeMolecule(working, maxIters=200)
+            note = (note + " Coordenadas 3D geradas com RDKit ETKDGv3.").strip()
         return working, note
 
     @staticmethod
@@ -374,42 +310,9 @@ class FileConverter:
                 return True
         return False
 
-    @staticmethod
-    def _sanitize_nan_charges(mol) -> int:
-        """Replace any NaN/inf/missing Gasteiger partial charge with 0.0 in-place.
-
-        RDKit's Gasteiger implementation may leave NaN/inf values in the
-        ``_GasteigerCharge`` property for some substructures (unusual
-        heteroatoms, charged groups, borderline aromatic systems). Meeko
-        then refuses to prepare the molecule with ``non finite charge: nan``.
-        Rather than abort the whole conversion, we sanitize the offending
-        atoms to 0.0 (neutral) so Meeko can still produce a valid PDBQT.
-        Returns the number of atoms that were sanitized.
-        """
-        sanitized = 0
-        for atom in mol.GetAtoms():
-            try:
-                value = (
-                    float(atom.GetProp("_GasteigerCharge"))
-                    if atom.HasProp("_GasteigerCharge")
-                    else float("nan")
-                )
-            except ValueError:
-                value = float("nan")
-            if math.isnan(value) or math.isinf(value):
-                atom.SetProp("_GasteigerCharge", "0.0")
-                sanitized += 1
-        if sanitized:
-            logger.warning(
-                "Ligante continha %d átomo(s) com carga Gasteiger inválida (NaN/inf). "
-                "Substituídos por 0.0 (neutro) para destravar o Meeko.",
-                sanitized,
-            )
-        else:
-            logger.info("Cargas Gasteiger validadas; nenhuma sanitização necessária.")
-        return sanitized
 
     @staticmethod
+    @atomic_conversion("receptor")
     def convert_pdb_to_pdbqt_receptor(
         input_path: Path, output_path: Path, allow_fallback: bool = False
     ) -> ConversionResult:
@@ -462,11 +365,16 @@ class FileConverter:
 
         import contextlib
         import io
+        from core.receptor_input import normalize_receptor_pdb
+
+        normalized, repaired_count = normalize_receptor_pdb(input_path.read_text(encoding="utf-8"))
+        normalized_path = output_path.parent / "normalized_receptor.pdb"
+        normalized_path.write_text(normalized, encoding="utf-8")
 
         argv = [
             "mk_prepare_receptor",
             "--read_pdb",
-            str(input_path),
+            str(normalized_path),
             "-o",
             str(output_path.with_suffix("")),
             "-p",
@@ -505,7 +413,7 @@ class FileConverter:
             return ConversionResult(
                 True,
                 output_path,
-                "Receptor preparado com Meeko (mk_prepare_receptor). Conformações alternativas: A quando presentes.\n" + captured.getvalue(),
+                f"Receptor preparado com Meeko (mk_prepare_receptor). Colunas PDB normalizadas: {repaired_count}. Conformações alternativas: A quando presentes.\n" + captured.getvalue(),
                 "",
             )
         return ConversionResult(
@@ -516,6 +424,7 @@ class FileConverter:
         )
 
     @staticmethod
+    @atomic_conversion("receptor")
     def convert_mol2_to_pdbqt_receptor(
         input_path: Path, output_path: Path
     ) -> ConversionResult:
@@ -523,10 +432,23 @@ class FileConverter:
         import tempfile
         try:
             from openbabel import pybel
+            if FileConverter._multi_molecule_note(input_path, FileConverter._obabel_input_format(input_path)):
+                raise ValueError("O receptor contém múltiplas moléculas/registros. Selecione uma estrutura por arquivo.")
             with tempfile.TemporaryDirectory(prefix="vinalab_receptor_") as directory:
                 intermediate = Path(directory) / "receptor.pdb"
-                molecule = next(pybel.readfile(FileConverter._obabel_input_format(input_path), str(input_path)))
-                molecule.write("pdb", str(intermediate), overwrite=True)
+                molecule = pybel.readstring(FileConverter._obabel_input_format(input_path), input_path.read_text(encoding="utf-8-sig"))
+                # Imported hydrogen names/residue assignments are not reliable in
+                # SDF/MOL2. Meeko rebuilds them from its receptor templates.
+                molecule.OBMol.DeleteHydrogens()
+                # Open Babel may append hydrogens after all heavy atoms, revisiting
+                # residues. Meeko requires each residue's atoms to be contiguous.
+                residues = {}
+                for line in molecule.write("pdb").splitlines():
+                    if line.startswith(("ATOM  ", "HETATM")):
+                        residues.setdefault(line[17:27], []).append(line)
+                intermediate.write_text("\n".join(
+                    line for atoms in residues.values() for line in atoms
+                ) + "\nEND\n", encoding="utf-8")
                 result = FileConverter.convert_pdb_to_pdbqt_receptor(intermediate, output_path)
                 return ConversionResult(result.success, result.output_path,
                     "Leitura MOL2/SDF: Open Babel; preparação PDBQT: Meeko.\n" + result.log,
@@ -540,6 +462,10 @@ class FileConverter:
         detected = FileConverter._detect_format(input_path)
         output_path = input_path.with_suffix(".pdbqt")
         if detected == "pdbqt":
+            try:
+                validate_prepared_pdbqt(input_path, molecule_type)
+            except (ValueError, OSError) as exc:
+                return ConversionResult(False, input_path, "", str(exc))
             return ConversionResult(
                 True,
                 input_path,
@@ -637,7 +563,7 @@ class FileConverter:
 
         input_format = FileConverter._obabel_input_format(input_path)
         try:
-            molecule = next(pybel.readfile(input_format, str(input_path)))
+            molecule = pybel.readstring(input_format, input_path.read_text(encoding="utf-8-sig"))
             if receptor:
                 molecule.OBMol.AddHydrogens()
             else:
@@ -646,11 +572,7 @@ class FileConverter:
                 # usable, mirroring `obabel ... -p 7.4`.
                 molecule.OBMol.AddHydrogens(False, True, LIGAND_PROTONATION_PH)
             options = {"r": True} if receptor else {}
-            writer = pybel.Outputfile(
-                "pdbqt", str(output_path), overwrite=True, opt=options
-            )
-            writer.write(molecule)
-            writer.close()
+            output_path.write_text(molecule.write("pdbqt", opt=options), encoding="utf-8")
         except Exception as exc:  # noqa: BLE001 - surface the underlying Open Babel error
             return ConversionResult(
                 False,
@@ -675,6 +597,7 @@ class FileConverter:
         )
 
     @staticmethod
+    @atomic_conversion("dynamic")
     def _convert_via_openbabel(
         input_path: Path,
         output_path: Path,
@@ -682,6 +605,17 @@ class FileConverter:
         previous_error: str,
     ) -> ConversionResult:
         """Convert to PDBQT with Open Babel API first, then the CLI runtime."""
+        input_format = FileConverter._obabel_input_format(input_path)
+        multi_note = FileConverter._multi_molecule_note(input_path, input_format)
+        if multi_note and receptor:
+            return ConversionResult(False, output_path, "", "O receptor contém múltiplas moléculas/registros. Selecione uma estrutura por arquivo.")
+        if multi_note:
+            previous_error = previous_error + "\n" + multi_note
+        if not receptor and input_format in {"sdf", "mol"}:
+            from openbabel import pybel
+            molecule = pybel.readstring(input_format, input_path.read_text(encoding="utf-8-sig"))
+            if molecule.OBMol.GetDimension() != 3:
+                return ConversionResult(False, output_path, "", "O ligante não possui coordenadas 3D. Selecione Meeko para gerar um conformero 3D antes do docking.")
         FileConverter._remove_stale_output(output_path)
         api_result = FileConverter._convert_via_openbabel_py_api(
             input_path, output_path, receptor, previous_error
@@ -785,58 +719,36 @@ class FileConverter:
             )
         return ConversionResult(True, output_path, log, errors)
 
-    @staticmethod
-    def _rdkit_ligand_mol(input_path: Path, input_format: str):
-        """Load a ligand with RDKit while preserving atom order and 3D coordinates."""
-        try:
-            from rdkit import Chem
-
-            if input_format == "pdb":
-                return Chem.MolFromPDBFile(
-                    str(input_path), removeHs=False, sanitize=False
-                )
-            if input_format == "mol2":
-                return Chem.MolFromMol2File(
-                    str(input_path), removeHs=False, sanitize=False
-                )
-        except Exception:  # noqa: BLE001 - missing/invalid RDKit is handled by validation failure
-            return None
-        return None
 
     @staticmethod
     def _validate_ligand_bond_geometry(output_path: Path, reference_mol) -> None:
-        """Validate converted PDBQT bond lengths against RDKit bond-type expectations.
+        """Check retained heavy coordinates using Meeko's explicit atom mapping.
 
-        Meeko may add, remove, or reorder hydrogens during preparation, so an
-        atom-count mismatch is tolerated.  Bond-length validation only runs when
-        the counts match exactly.
+        PDBQT torsion-tree order is not RDKit atom order. Nonpolar hydrogens
+        disappear and macrocycle pseudo-atoms may appear during preparation.
         """
         if reference_mol is None or reference_mol.GetNumConformers() == 0:
-            return  # skip validation when reference is unavailable
-        output_atoms = FileConverter._pdbqt_atoms(output_path)
-        if len(output_atoms) != reference_mol.GetNumAtoms():
-            return  # Meeko changed hydrogen count — cannot map bonds 1:1
-        failures: list[str] = []
-        for bond in reference_mol.GetBonds():
-            begin = bond.GetBeginAtomIdx()
-            end = bond.GetEndAtomIdx()
-            if begin >= len(output_atoms) or end >= len(output_atoms):
+            return
+        index_map = {}
+        coordinates = {}
+        for line in output_path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("REMARK INDEX MAP"):
+                pairs = [int(value) for value in line.split()[3:]]
+                index_map.update(zip(pairs[::2], pairs[1::2]))
+            elif line.startswith(("ATOM  ", "HETATM")):
+                coordinates[int(line[6:11])] = tuple(float(line[i:i + 8]) for i in (30, 38, 46))
+        if not index_map:
+            raise ValueError("Meeko não forneceu o mapa de átomos para validar a geometria.")
+        conformer = reference_mol.GetConformer()
+        for atom in reference_mol.GetAtoms():
+            if atom.GetAtomicNum() == 1:
                 continue
-            actual = FileConverter._distance(
-                output_atoms[begin]["xyz"], output_atoms[end]["xyz"]
-            )
-            ideal = FileConverter._rdkit_ideal_bond_length(bond)
-            if ideal <= 0:
-                continue
-            deviation = abs(actual - ideal) / ideal
-            if deviation > 0.30:
-                failures.append(
-                    f"{begin + 1}-{end + 1}: observado={actual:.3f} Å, ideal={ideal:.3f} Å, desvio={deviation:.1%}"
-                )
-        if failures:
-            raise ValueError(
-                "Ligações fora da tolerância de 30%: " + "; ".join(failures[:8])
-            )
+            serial = index_map.get(atom.GetIdx() + 1)
+            if serial not in coordinates:
+                raise ValueError("Um átomo pesado foi perdido durante a conversão.")
+            expected = tuple(conformer.GetAtomPosition(atom.GetIdx()))
+            if FileConverter._distance(expected, coordinates[serial]) > 0.001:
+                raise ValueError("As coordenadas de um átomo pesado mudaram durante a conversão.")
 
     @staticmethod
     def _bond_length_stats(mol) -> str:
@@ -855,21 +767,6 @@ class FileConverter:
             )
         return FileConverter._format_stats(lengths)
 
-    @staticmethod
-    def _bond_length_stats_from_pdbqt(path: Path, reference_mol) -> str:
-        """Return output bond stats using the reference molecule's bond graph."""
-        if reference_mol is None:
-            return "indisponível"
-        atoms = FileConverter._pdbqt_atoms(path)
-        if len(atoms) != reference_mol.GetNumAtoms():
-            return f"indisponível (átomos entrada={reference_mol.GetNumAtoms()}, saída={len(atoms)})"
-        lengths = [
-            FileConverter._distance(
-                atoms[bond.GetBeginAtomIdx()]["xyz"], atoms[bond.GetEndAtomIdx()]["xyz"]
-            )
-            for bond in reference_mol.GetBonds()
-        ]
-        return FileConverter._format_stats(lengths)
 
     @staticmethod
     def _geometry_log(message: str, pre_stats: str, post_stats: str) -> str:
@@ -902,24 +799,6 @@ class FileConverter:
             atoms.append({"xyz": xyz})
         return atoms
 
-    @staticmethod
-    def _rdkit_ideal_bond_length(bond) -> float:
-        """Estimate ideal bond length from RDKit atom radii and bond order."""
-        from rdkit import Chem
-
-        periodic_table = Chem.GetPeriodicTable()
-        left = bond.GetBeginAtom()
-        right = bond.GetEndAtom()
-        base = periodic_table.GetRcovalent(
-            left.GetAtomicNum()
-        ) + periodic_table.GetRcovalent(right.GetAtomicNum())
-        order_scale = {
-            Chem.BondType.SINGLE: 1.00,
-            Chem.BondType.AROMATIC: 0.93,
-            Chem.BondType.DOUBLE: 0.87,
-            Chem.BondType.TRIPLE: 0.78,
-        }.get(bond.GetBondType(), 1.00)
-        return base * order_scale
 
     @staticmethod
     def _distance(

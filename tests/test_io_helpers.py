@@ -105,7 +105,11 @@ class ConversionFallbackTests(unittest.TestCase):
             input_path = tmp_path / "ligand.sdf"
             output_path = tmp_path / "ligand.pdbqt"
             obabel = tmp_path / "obabel.exe"
-            input_path.write_text("fake sdf", encoding="utf-8")
+            from rdkit import Chem
+            from rdkit.Chem import AllChem
+            molecule = Chem.AddHs(Chem.MolFromSmiles("CCO"))
+            AllChem.EmbedMolecule(molecule, randomSeed=42)
+            input_path.write_text(Chem.MolToMolBlock(molecule) + "$$$$\n", encoding="utf-8")
             obabel.write_text("", encoding="utf-8")
             commands = []
 

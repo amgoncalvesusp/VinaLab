@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import itertools
 from pathlib import Path
-import subprocess
-import sys
 import tempfile
 from typing import TYPE_CHECKING
 
@@ -49,8 +47,10 @@ try:
 except ImportError:  # pragma: no cover - installer should provide PySide6-WebEngine
     QWebEngineView = None
 
-from core.docking_engine import extract_pose_model, find_obabel_executable
-from core.native_tools import native_tool_env
+from core.docking_engine import convert_with_obabel, extract_pose_model, find_obabel_executable
+from core.complex_export import (
+    build_complex_mol2, macrocycle_export_pdb, read_export_atoms, validate_export_atoms,
+)
 from core.file_utils import clean_pdbqt_text
 from core.i18n import I18n
 from core.rmsd import symmetry_corrected_rmsd
@@ -64,11 +64,6 @@ from tabs.results_view import (
 
 if TYPE_CHECKING:
     from tabs.results_tab import ResultsTab
-
-NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0
-# Cap Open Babel so a stuck conversion cannot freeze the export dialog.
-OBABEL_EXPORT_TIMEOUT_S = 120
-
 
 class ComparisonDialog(QDialog):
     """Compare docked poses, crystal references, and scoring values."""
@@ -541,25 +536,38 @@ class ExportWorker(QThread):
                     self._export_row(row, staging, self.export_format)
                     if self.isInterruptionRequested():
                         break
-                    for path in staging.iterdir():
-                        # Exclusive creation preserves existing exports, even on races.
-                        with (self.output_dir / path.name).open("xb") as target:
-                            target.write(path.read_bytes())
+                    self._publish_row(staging)
                 exported += 1
                 self.progress.emit(int(exported / len(self.rows) * 100))
         except Exception as exc:
             error = str(exc)
         self.completed.emit(exported, error, self.isInterruptionRequested())
 
+    def _publish_row(self, staging: Path) -> None:
+        created = []
+        try:
+            for path in staging.iterdir():
+                destination = self.output_dir / path.name
+                # Exclusive creation preserves other exports; roll back this row only.
+                with destination.open("xb") as target:
+                    created.append(destination)
+                    target.write(path.read_bytes())
+        except Exception:
+            for path in created:
+                path.unlink(missing_ok=True)
+            raise
+
     def _export_row(self, row: dict, output_dir: Path, export_format: str) -> None:
         """Export a single pose row, plus the receptor-pose complex when requested."""
+        if export_format not in {"pdbqt", "pdb", "mol2"}:
+            raise ValueError(f"Unsupported export format: {export_format}")
         pose_basename = row["_export_name"]
         pose_text = extract_pose_model(
             Path(row["output_file"]), int(row["mode"]), include_model=False
         )
         pose_pdbqt = output_dir / f"{pose_basename}.pdbqt"
         pose_pdbqt.write_text(pose_text, encoding="utf-8")
-        if self.include_complex:
+        if self.include_complex and export_format != "mol2":
             self._write_complex_pdb(
                 row, pose_text, output_dir / f"{pose_basename}_complex.pdb"
             )
@@ -567,49 +575,40 @@ class ExportWorker(QThread):
             return
 
         output_path = output_dir / f"{pose_basename}.{export_format}"
-        obabel = find_obabel_executable()
-        try:
-            completed = subprocess.run(
-                [obabel, str(pose_pdbqt), "-O", str(output_path)],
-                env=native_tool_env(Path(obabel)),
-                capture_output=True,
-                text=True,
-                check=False,
-                creationflags=NO_WINDOW,
-                timeout=OBABEL_EXPORT_TIMEOUT_S,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise RuntimeError(
-                I18n.get("rd_obabel_timeout", self.lang).format(
-                    seconds=OBABEL_EXPORT_TIMEOUT_S
+        convert_with_obabel(pose_pdbqt, output_path)
+        if self.include_complex and export_format == "mol2":
+            receptor_file = self._receptor_file(row)
+            with tempfile.TemporaryDirectory(prefix="vinalab-receptor-") as directory:
+                receptor_mol2 = Path(directory) / "receptor.mol2"
+                convert_with_obabel(receptor_file, receptor_mol2)
+                complex_text = build_complex_mol2(
+                    receptor_mol2.read_text(encoding="utf-8"),
+                    output_path.read_text(encoding="utf-8"),
                 )
-            ) from exc
-        if completed.returncode != 0:
-            raise RuntimeError(
-                completed.stderr.strip()
-                or completed.stdout.strip()
-                or I18n.get("rd_obabel_conv_fail", self.lang)
-            )
+            (output_dir / f"{pose_basename}_complex.mol2").write_text(complex_text, encoding="utf-8")
         pose_pdbqt.unlink(missing_ok=True)
 
-    def _write_complex_pdb(self, row: dict, pose_text: str, output_path: Path) -> None:
-        """Write the receptor plus the docked pose as one PDB complex.
-
-        # ponytail: PDB only. It is what PyMOL/Chimera open directly, and running a
-        # whole receptor through Open Babel just to reach mol2 buys unreliable bond
-        # perception for a much slower export.
-        """
+    def _receptor_file(self, row: dict) -> Path:
         receptor_file = Path(str(row.get("receptor_file", "")))
-        if not receptor_file.exists():
+        if not receptor_file.is_file():
             raise FileNotFoundError(
                 I18n.get("rd_receptor_missing", self.lang).format(path=receptor_file)
             )
-        output_path.write_text(
-            build_complex_pdb(
-                receptor_file.read_text(encoding="utf-8", errors="replace"), pose_text
-            ),
-            encoding="utf-8",
+        return receptor_file
+
+    def _write_complex_pdb(self, row: dict, pose_text: str, output_path: Path) -> None:
+        """Write a coordinate-preserving complex, including in PDBQT-only installs."""
+        receptor_file = self._receptor_file(row)
+        receptor_text = receptor_file.read_text(encoding="utf-8")
+        expected = read_export_atoms(receptor_text, "pdbqt") + read_export_atoms(pose_text, "pdbqt")
+        if len(expected) > 99999:
+            raise ValueError("Complex exceeds the PDB limit of 99999 atoms; use MOL2.")
+        complex_text = build_complex_pdb(
+            macrocycle_export_pdb(receptor_text) or receptor_text,
+            macrocycle_export_pdb(pose_text) or pose_text,
         )
+        validate_export_atoms(expected, complex_text, "pdb")
+        output_path.write_text(complex_text, encoding="utf-8")
 
 
 
@@ -771,7 +770,7 @@ class ExportComplexDialog(QDialog):
             base = f"{safe_export_name(row['ligand_name'])}_{scorer}_pose{int(row['mode'])}"
             candidate, number = base, 1
             while candidate in reserved or any((directory / (candidate + suffix)).exists()
-                for suffix in (".pdbqt", ".pdb", ".mol2", "_complex.pdb")):
+                for suffix in (".pdbqt", ".pdb", ".mol2", "_complex.pdb", "_complex.mol2")):
                 number += 1
                 candidate = f"{base}_{number}"
             reserved.add(candidate)
@@ -781,12 +780,16 @@ class ExportComplexDialog(QDialog):
     def _refresh_preview(self):
         if self.worker is not None and self.worker.isRunning():
             return
+        complex_format = "mol2" if self.format_combo.currentText() == "mol2" else "pdb"
+        self.complex_checkbox.setText(
+            I18n.get("rd_export_complex_pdb", self.lang).format(format=complex_format.upper())
+        )
         rows = self._planned_rows()
         names = []
         for row in rows[:10]:
             names.append(row["_export_name"] + "." + self.format_combo.currentText())
             if self.complex_checkbox.isChecked():
-                names.append(row["_export_name"] + "_complex.pdb")
+                names.append(row["_export_name"] + "_complex." + complex_format)
         self.preview_label.setText("\n".join(names) + ("\n..." if len(rows) > 10 else ""))
 
     def _rows_to_export(self) -> list[dict]:

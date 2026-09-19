@@ -131,25 +131,47 @@ def find_obabel_executable() -> str | None:
 
 
 def convert_with_obabel(input_path: Path, output_path: Path) -> Path:
-    """Convert a molecular file with Open Babel."""
+    """Convert without exposing Unicode filenames to native Open Babel file I/O."""
+    from core.complex_export import (
+        atomic_export_bytes, macrocycle_export_pdb, read_export_atoms, validate_export_atoms,
+    )
+
     obabel = find_obabel_executable()
     if obabel is None:
         raise RuntimeError("OpenBabel não encontrado.")
-    completed = subprocess.run(
-        [obabel, str(input_path), "-O", str(output_path)],
-        env=native_tool_env(Path(obabel)),
-        capture_output=True,
-        text=True,
-        check=False,
-        creationflags=NO_WINDOW,
-    )
-    if completed.returncode != 0:
-        message = (
-            completed.stderr.strip()
-            or completed.stdout.strip()
-            or "Falha na conversão com OpenBabel."
-        )
-        raise RuntimeError(message)
+    input_format, output_format = input_path.suffix[1:].lower(), output_path.suffix[1:].lower()
+    supported = {"pdbqt", "pdb", "mol2"}
+    expected = (read_export_atoms(input_path.read_text(encoding="utf-8"), input_format)
+                if input_format in supported and output_format in supported else None)
+    macrocycle_pdb = (macrocycle_export_pdb(input_path.read_text(encoding="utf-8"))
+                     if input_format == "pdbqt" and output_format != "pdbqt" else None)
+    with tempfile.TemporaryDirectory(prefix="vinalab-obabel-") as directory:
+        staging = Path(directory)
+        source = staging / ("input.pdb" if macrocycle_pdb is not None else "input." + input_format)
+        target = staging / ("output." + output_format)
+        if macrocycle_pdb is not None:
+            source.write_text(macrocycle_pdb, encoding="utf-8")
+        else:
+            shutil.copyfile(input_path, source)
+        try:
+            completed = subprocess.run(
+                [str(Path(obabel).resolve()), source.name, "-O", target.name],
+                cwd=staging, env=native_tool_env(Path(obabel)),
+                capture_output=True, text=True, errors="replace", check=False,
+                creationflags=NO_WINDOW, timeout=120,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("Open Babel conversion timed out after 120 s.") from exc
+        except OSError as exc:
+            raise RuntimeError(f"Unable to start Open Babel: {exc}") from exc
+        if completed.returncode != 0:
+            raise RuntimeError(completed.stderr.strip() or completed.stdout.strip()
+                               or "Falha na conversão com OpenBabel.")
+        if not target.is_file() or target.stat().st_size == 0:
+            raise RuntimeError("Open Babel produced no molecular output. " + completed.stderr.strip())
+        if expected is not None:
+            validate_export_atoms(expected, target.read_text(encoding="utf-8"), output_format)
+        atomic_export_bytes(output_path, target.read_bytes())
     return output_path
 
 

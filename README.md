@@ -1,6 +1,6 @@
 # VinaLab Light
 
-VinaLab Light `v1.1.0` is the latest stable release of this project. It is a focused desktop GUI for AutoDock Vina 1.2.x, with the core docking workflow and practical result-validation tools.
+VinaLab Light `v1.1.1` is the latest stable release of this project. It is a focused desktop GUI for AutoDock Vina 1.2.x, with the core docking workflow and practical result-validation tools.
 
 ## What is included
 
@@ -14,6 +14,7 @@ VinaLab Light `v1.1.0` is the latest stable release of this project. It is a foc
 - Reference-ligand RMSD comparison for new poses, with configurable pass/fail cutoff.
 - Pose tables, affinity and RMSD plots, interaction analysis, RMSD clustering, and consensus views.
 - Exportable docking reports and representative cluster poses.
+- Pose export in PDBQT, PDB, or MOL2, with receptor-pose complexes in PDB or MOL2.
 - Optional PyMOL handoff when a PyMOL executable is available on the system `PATH`.
 - English and Brazilian Portuguese interface strings, including in-app quick-start tips.
 
@@ -23,12 +24,12 @@ This release intentionally focuses on AutoDock Vina native scoring. GNINA, CNN/n
 
 ## Downloads
 
-The `v1.1.0` GitHub release provides x64 packages for Windows and Ubuntu Linux:
+The `v1.1.1` GitHub release provides x64 packages for Windows and Ubuntu Linux:
 
-- `VinaLab-Light-1.1.0-windows-x64-setup.exe` - Windows setup installer.
-- `VinaLab-Light-1.1.0-windows-x64-portable.zip` - Windows portable package.
-- `VinaLab-Light-1.1.0-ubuntu-x64.deb` - Ubuntu/Debian installer.
-- `VinaLab-Light-1.1.0-linux-x64.tar.gz` - Linux portable archive.
+- `VinaLab-Light-1.1.1-windows-x64-setup.exe` - Windows setup installer.
+- `VinaLab-Light-1.1.1-windows-x64-portable.zip` - Windows portable package.
+- `VinaLab-Light-1.1.1-ubuntu-x64.deb` - Ubuntu/Debian installer.
+- `VinaLab-Light-1.1.1-linux-x64.tar.gz` - Linux portable archive.
 
 SHA-256 checksum files are included with the release assets.
 
@@ -47,7 +48,7 @@ The Windows build does not display or package GNINA. Use Linux/WSL only if you n
 Install the Debian package with:
 
 ```bash
-sudo apt install ./VinaLab-Light-1.1.0-ubuntu-x64.deb
+sudo apt install ./VinaLab-Light-1.1.1-ubuntu-x64.deb
 ```
 
 Then launch VinaLab from the application menu or run:
@@ -65,7 +66,19 @@ The Debian package installs the application under `/opt/vinalab`, registers a de
 3. Select the receptor and one or more ligand files (or a folder), then choose `Vina` or `Vinardo`.
 4. Define the docking box manually, or select a reference ligand to center and size it. The first preview tab, **3D Box**, activates when coordinates change.
 5. Review affinity, poses, contacts, clusters, and reference RMSD. Panels and selection lists support scrolling on notebook screens.
-6. Export a report or open a selected pose in PyMOL when available.
+6. Export poses and receptor-pose complexes, export a report, or open a selected pose in PyMOL when available.
+
+## Conversion and export safeguards
+
+Light 1.1.1 fixes long-header PDB detection, displaced element columns from overflowing occupancy fields, charged MOL2 parsing, and residue grouping in receptor MOL2/SDF imports. Meeko remains the default PDBQT preparation engine. Open Babel can read MOL2/SDF intermediates without replacing Meeko parameterization. Declared 2D ligand inputs are embedded with RDKit ETKDGv3 on the Meeko path; explicit Open Babel preparation rejects non-3D SDF inputs rather than exporting flat structures.
+
+Conversions validate atom types, finite coordinates/charges, and ligand geometry through Meeko atom maps before publishing output. Inputs and previous successful outputs are preserved on failure. Duplicate output names are rejected in batch conversion, and only successful files are handed to docking.
+
+Meeko macrocycle closure types are preserved for Vina docking. PDB/MOL2 exports omit nonphysical ring-closure dummy atoms; PDBQT pose exports retain them for the docking representation. See the [AutoDock Vina macrocycle protocol](https://autodock-vina.readthedocs.io/en/stable/docking_macrocycle.html).
+
+Receptor preparation still requires recognizable, complete residue chemistry. Arbitrary SDF/MOL2 structures cannot always reconstruct protein residue identities; ambiguous multi-record receptors and unsupported chemistry are reported instead of silently dropping residues or inventing zero charges. Ligand files containing multiple records retain the documented first-record behavior, with a warning; use separate files for screening.
+
+Exported complexes contain the prepared receptor plus the selected pose, with no coordinate optimization or added atoms. Selecting MOL2 writes a full `_complex.mol2`; selecting PDB or PDBQT writes a companion `_complex.pdb`. MOL2 bond orders/types are perceived by Open Babel separately for receptor and pose, without introducing receptor-ligand covalent bonds. PDBQT does not retain complete chemical topology or nonpolar hydrogens: these exports are not a recovered force-field parameterization.
 
 ## Interaction methodology
 

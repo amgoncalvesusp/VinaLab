@@ -98,6 +98,7 @@ class MainWindow(QMainWindow):
         self.results_tab.results_changed.connect(self.report_tab.set_results)
         self.results_tab.chart_updated.connect(self.report_tab.set_chart_path)
         self.converter_tab.conversion_ready.connect(self._use_converted_file)
+        self.converter_tab.ligand_files_ready.connect(self._use_converted_ligands)
         self.prepare_protein_tab.receptor_prepared.connect(self._use_prepared_receptor)
         self.prepare_protein_tab.reference_selected.connect(self._use_extracted_reference)
         self.setup_tab.selection_changed.connect(self._push_receptor_to_viewer)
@@ -305,6 +306,11 @@ class MainWindow(QMainWindow):
 
     def _use_extracted_reference(self, filepath: str) -> None:
         self.docking_tab._set_reference_ligand(Path(filepath), center_box=True)
+        self.tabs.setCurrentWidget(self.docking_workspace)
+
+    def _use_converted_ligands(self, filepaths: list[str]) -> None:
+        """Hand off only successfully converted files, not stale folder contents."""
+        self.setup_tab.set_ligand_files(filepaths)
         self.tabs.setCurrentWidget(self.docking_workspace)
 
     def _use_prepared_receptor(self, filepath: str) -> None:

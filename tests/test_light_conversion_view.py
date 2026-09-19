@@ -10,6 +10,31 @@ APP = QApplication.instance() or QApplication([])
 from core.converter import ConversionResult, FileConverter
 from tabs.results_view import _box_preview_js, pdbqt_text_to_view_pdb, build_pose_view_html
 from ui.converter_widget import ConversionWorker
+from ui.converter_widget import ConverterWidget
+
+
+def test_batch_handoff_contains_only_successful_files(tmp_path):
+    widget = ConverterWidget()
+    widget.last_molecule_type = "ligand"
+    widget.last_results = [
+        ConversionResult(True, tmp_path / "one.pdbqt", "", ""),
+        ConversionResult(False, tmp_path / "old.pdbqt", "", "failed"),
+        ConversionResult(True, tmp_path / "two.pdbqt", "", ""),
+    ]
+    emitted = []
+    widget.ligand_files_ready.connect(emitted.append)
+    widget._emit_current_result()
+    assert emitted == [[str(tmp_path / "one.pdbqt"), str(tmp_path / "two.pdbqt")]]
+    widget.close()
+
+
+def test_changing_molecule_type_invalidates_previous_result(tmp_path):
+    widget = ConverterWidget()
+    widget.last_results = [ConversionResult(True, tmp_path / "ligand.pdbqt", "", "")]
+    widget.type_combo.setCurrentIndex(1)
+    assert widget.last_results == []
+    assert widget.use_button.isHidden()
+    widget.close()
 
 
 def test_meeko_failure_is_not_silently_replaced(tmp_path):

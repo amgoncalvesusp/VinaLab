@@ -34,6 +34,7 @@ RECEPTOR_ONLY_TAGS = {
 RECEPTOR_ROLES = {"receptor", "rigid_receptor", "flex_receptor"}
 
 VALID_AUTODOCK_TYPES = {
+    "CG0", "CG1", "CG2", "CG3", "G0", "G1", "G2", "G3",
     "C",
     "A",
     "N",

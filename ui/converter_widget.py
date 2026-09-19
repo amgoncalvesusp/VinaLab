@@ -2,7 +2,7 @@
 """PDB/MOL2/PDBQT conversion panel for VinaLab."""
 
 from pathlib import Path
-import shutil
+from collections import Counter
 
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import (
@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.converter import ConversionResult, FileConverter
+from core.conversion_io import validate_prepared_pdbqt
 from core.i18n import I18n
 from core.scrolling import ScrollManager
 
@@ -45,10 +46,16 @@ class ConversionWorker(QThread):
         output_is_folder = (
             len(self.input_paths) > 1 or self.output_target.suffix.lower() != ".pdbqt"
         )
+        destinations = Counter(
+            str(self._output_path_for(path, output_is_folder).resolve()).casefold()
+            for path in self.input_paths
+        )
         for input_path in self.input_paths:
             output_path = self._output_path_for(input_path, output_is_folder)
             self.log_signal.emit(f"Convertendo {input_path.name} -> {output_path.name}")
             try:
+                if destinations[str(output_path.resolve()).casefold()] > 1:
+                    raise ValueError("Arquivos com o mesmo nome gerariam a mesma saída. Renomeie-os antes de converter.")
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 result = self._convert_one(input_path, output_path)
             except Exception as exc:
@@ -70,9 +77,14 @@ class ConversionWorker(QThread):
         """Convert one file to PDBQT using the selected molecule type."""
         detected = FileConverter._detect_format(input_path)
         if detected == "pdbqt":
+            try:
+                validate_prepared_pdbqt(input_path, self.molecule_type)
+            except (ValueError, OSError) as exc:
+                return ConversionResult(False, output_path, "", str(exc))
             if input_path.resolve() != output_path.resolve():
                 output_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(input_path, output_path)
+                from core.complex_export import atomic_export_bytes
+                atomic_export_bytes(output_path, input_path.read_bytes())
                 return ConversionResult(
                     True,
                     output_path,
@@ -128,6 +140,7 @@ class ConverterWidget(QWidget):
     """Standalone molecular file conversion panel."""
 
     conversion_ready = Signal(str, str)
+    ligand_files_ready = Signal(object)
 
     def __init__(self) -> None:
         """Create conversion controls and dependency status indicators."""
@@ -137,6 +150,7 @@ class ConverterWidget(QWidget):
         self.input_paths: list[Path] = []
         self.last_results: list[ConversionResult] = []
         self.last_output_target: Path | None = None
+        self.last_molecule_type = "ligand"
         self.title_label = QLabel()
         self.subtitle_label = QLabel()
         self.note_label = QLabel()
@@ -228,6 +242,8 @@ class ConverterWidget(QWidget):
             f"{I18n.get('convert_button', self.lang)}: {len(self.input_paths)} arquivo(s)"
         )
         self.convert_button.setEnabled(False)
+        for control in (self.input_button, self.output_button, self.type_combo, self.backend_combo):
+            control.setEnabled(False)
         self.worker = ConversionWorker(self.input_paths, output_target, molecule_type,
                                        self.backend_combo.currentData())
         self.worker.log_signal.connect(self.log_console.append)
@@ -340,8 +356,11 @@ class ConverterWidget(QWidget):
     def _conversion_finished(self, results: list[ConversionResult]) -> None:
         """Handle conversion completion in the GUI thread."""
         self.convert_button.setEnabled(True)
+        for control in (self.input_button, self.output_button, self.type_combo, self.backend_combo):
+            control.setEnabled(True)
         self.last_results = list(results)
-        self.last_output_target = self._current_output_target()
+        self.last_output_target = self.worker.output_target if self.worker else self._current_output_target()
+        self.last_molecule_type = self.worker.molecule_type if self.worker else self._current_molecule_type()
         ok_results = [result for result in results if result.success]
         failed_results = [result for result in results if not result.success]
         if failed_results:
@@ -377,12 +396,10 @@ class ConverterWidget(QWidget):
         ok_results = [result for result in self.last_results if result.success]
         if not ok_results:
             return
-        if self._current_molecule_type() == "receptor":
+        if self.last_molecule_type == "receptor":
             self.conversion_ready.emit(str(ok_results[0].output_path), "receptor")
-        elif self._is_batch_selection():
-            self.conversion_ready.emit(
-                str(self._current_output_target()), "ligand_batch"
-            )
+        elif len(ok_results) > 1:
+            self.ligand_files_ready.emit([str(result.output_path) for result in ok_results])
         else:
             self.conversion_ready.emit(str(ok_results[0].output_path), "ligand")
 
@@ -399,6 +416,8 @@ class ConverterWidget(QWidget):
         """Refresh output suggestions when molecule type changes."""
         self._refresh_use_button()
         self._suggest_output()
+        self.last_results = []
+        self.use_button.hide()
 
     def _current_output_target(self) -> Path:
         """Return the selected output target, falling back to a suggested target."""
