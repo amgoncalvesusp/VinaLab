@@ -56,6 +56,8 @@ class PackageReleaseTests(unittest.TestCase):
 
         self.assertIn('sys.platform == "darwin" and _package == "prody"', spec_text)
         self.assertIn('Path(entry[0]).name != "hpb.so"', spec_text)
+        self.assertIn('name != "prody.proteins.hpb"', spec_text)
+        self.assertIn('excludes.append("prody.proteins.hpb")', spec_text)
 
     def test_prepare_linux_deb_tree_installs_launcher_desktop_and_icon(self) -> None:
         """The Ubuntu installer tree should expose a runnable system command."""

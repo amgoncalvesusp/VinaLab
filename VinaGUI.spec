@@ -159,6 +159,7 @@ for _package in (
         # package this ELF binary into a macOS application.
         _datas = [entry for entry in _datas if Path(entry[0]).name != "hpb.so"]
         _binaries = [entry for entry in _binaries if Path(entry[0]).name != "hpb.so"]
+        _hidden = [name for name in _hidden if name != "prody.proteins.hpb"]
     datas += _datas
     binaries += _binaries
     hiddenimports += _hidden
@@ -277,6 +278,8 @@ excludes = [
     "tensorboard",
     "tensorflow",
 ]
+if sys.platform == "darwin":
+    excludes.append("prody.proteins.hpb")
 
 
 a = Analysis(
