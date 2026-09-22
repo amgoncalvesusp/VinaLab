@@ -57,7 +57,7 @@ class PackageReleaseTests(unittest.TestCase):
         self.assertIn('sys.platform == "darwin" and _package == "prody"', spec_text)
         self.assertIn('Path(entry[0]).name != "hpb.so"', spec_text)
         self.assertIn('name != "prody.proteins.hpb"', spec_text)
-        self.assertIn('excludes.append("prody.proteins.hpb")', spec_text)
+        self.assertIn('excludes.extend(("prody.proteins.hpb", "pkg_resources"))', spec_text)
         self.assertIn("exclude_binaries=_macos_build", spec_text)
         self.assertIn("BUNDLE(\n        coll,", spec_text)
 

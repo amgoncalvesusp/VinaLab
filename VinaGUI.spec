@@ -279,7 +279,10 @@ excludes = [
     "tensorflow",
 ]
 if sys.platform == "darwin":
-    excludes.append("prody.proteins.hpb")
+    # This app does not use setuptools' removed pkg_resources API. On some
+    # macOS dependency sets PyInstaller still injects its legacy runtime hook,
+    # which expects pkg_resources.NullProvider and aborts startup.
+    excludes.extend(("prody.proteins.hpb", "pkg_resources"))
 
 
 a = Analysis(
