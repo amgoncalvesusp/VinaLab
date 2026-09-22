@@ -297,13 +297,15 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
+_macos_build = sys.platform == "darwin"
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
+    [] if _macos_build else a.binaries,
+    [] if _macos_build else a.datas,
     [],
     name="VinaLab",
+    exclude_binaries=_macos_build,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -325,10 +327,19 @@ exe = EXE(
     ),
 )
 
-if sys.platform == "darwin":
+if _macos_build:
+    coll = COLLECT(
+        exe,
+        a.binaries,
+        a.datas,
+        strip=False,
+        upx=False,
+        upx_exclude=[],
+        name="VinaLab",
+    )
     app_version = Path("VERSION").read_text(encoding="utf-8").strip()
     app = BUNDLE(
-        exe,
+        coll,
         name="VinaLab.app",
         icon="ui/icon.icns",
         bundle_identifier="org.vinalab.light",
