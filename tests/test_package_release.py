@@ -51,6 +51,12 @@ class PackageReleaseTests(unittest.TestCase):
         self.assertNotIn("c10.dll", spec_text)
         self.assertNotIn('("pontuacao", "pontuacao")', spec_text)
 
+    def test_macos_spec_excludes_prody_linux_hpb_binary(self) -> None:
+        spec_text = Path("VinaGUI.spec").read_text(encoding="utf-8")
+
+        self.assertIn('sys.platform == "darwin" and _package == "prody"', spec_text)
+        self.assertIn('Path(entry[0]).name != "hpb.so"', spec_text)
+
     def test_prepare_linux_deb_tree_installs_launcher_desktop_and_icon(self) -> None:
         """The Ubuntu installer tree should expose a runnable system command."""
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -153,6 +153,12 @@ for _package in (
     "openbabel",
 ):
     _datas, _binaries, _hidden = collect_all(_package)
+    if sys.platform == "darwin" and _package == "prody":
+        # ProDy ships an optional prebuilt Linux HPB module in its source
+        # distribution. VinaLab Light does not use HPB, and Mach-O cannot
+        # package this ELF binary into a macOS application.
+        _datas = [entry for entry in _datas if Path(entry[0]).name != "hpb.so"]
+        _binaries = [entry for entry in _binaries if Path(entry[0]).name != "hpb.so"]
     datas += _datas
     binaries += _binaries
     hiddenimports += _hidden
