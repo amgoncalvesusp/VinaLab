@@ -43,13 +43,14 @@ def main() -> int:
     if system == "windows":
         artifacts = package_windows(args.version, dist_dir, output_dir)
     elif system == "darwin":
-        artifacts = [package_unix(args.version, dist_dir, output_dir, "macos")]
+        artifacts = [package_macos(args.version, dist_dir, output_dir)]
     elif system == "linux":
         artifacts = package_linux(args.version, dist_dir, output_dir)
     else:
         raise SystemExit(f"Sistema operacional não suportado para empacotamento: {platform.system()}")
 
-    checksum_path = output_dir / f"SHA256SUMS-{system}.txt"
+    manifest_system = "macos" if system == "darwin" else system
+    checksum_path = output_dir / f"SHA256SUMS-{manifest_system}.txt"
     checksum_path.write_text("\n".join(checksum_lines(artifacts)) + "\n", encoding="ascii")
     return 0
 
@@ -115,6 +116,73 @@ def package_unix(version: str, dist_dir: Path, output_dir: Path, target: str) ->
             with source.open("rb") as file_handle:
                 handle.addfile(info, file_handle)
     return archive
+
+
+def package_macos(version: str, dist_dir: Path, output_dir: Path) -> Path:
+    """Build an architecture-specific DMG containing the frozen macOS app."""
+    architecture = macos_architecture()
+    app_bundle = dist_dir / f"{APP_NAME}.app"
+    require_macos_app_bundle(app_bundle)
+
+    hdiutil = shutil.which("hdiutil")
+    if hdiutil is None:
+        raise FileNotFoundError("hdiutil not found; build the macOS installer on macOS.")
+
+    image = output_dir / (
+        f"{RELEASE_BASENAME}-{version}-macos-{architecture}-unsigned-preview.dmg"
+    )
+    if image.exists():
+        image.unlink()
+
+    with tempfile.TemporaryDirectory(prefix="vinalab-dmg-") as tmpdir:
+        image_root = Path(tmpdir) / "image"
+        image_root.mkdir()
+        shutil.copytree(app_bundle, image_root / app_bundle.name, symlinks=True)
+        (image_root / "Applications").symlink_to(
+            Path("/Applications"), target_is_directory=True
+        )
+        shutil.copy2(
+            Path("packaging/macos/INSTALL_TEST_BUILD.txt"),
+            image_root / "INSTALL_TEST_BUILD.txt",
+        )
+        shutil.copy2(release_notes_path(version), image_root / f"RELEASE_NOTES_{version}.md")
+        subprocess.run(
+            [
+                hdiutil,
+                "create",
+                "-volname",
+                f"VinaLab Light {version}",
+                "-srcfolder",
+                str(image_root),
+                "-format",
+                "UDZO",
+                "-ov",
+                str(image),
+            ],
+            check=True,
+        )
+    return image
+
+
+def macos_architecture() -> str:
+    """Return the release architecture label for the current Mac runner."""
+    machine = platform.machine().lower()
+    if machine in {"arm64", "aarch64"}:
+        return "arm64"
+    if machine in {"x86_64", "amd64"}:
+        return "x64"
+    raise SystemExit(f"Unsupported macOS architecture: {platform.machine()}")
+
+
+def require_macos_app_bundle(app_bundle: Path) -> None:
+    """Reject incomplete PyInstaller app bundles before creating a disk image."""
+    if not app_bundle.is_dir():
+        raise FileNotFoundError(f"macOS app bundle not found: {app_bundle}")
+    require_file(app_bundle / "Contents" / "Info.plist")
+    executable = app_bundle / "Contents" / "MacOS" / APP_NAME
+    require_file(executable)
+    if not executable.stat().st_mode & 0o111:
+        raise PermissionError(f"macOS app executable is not executable: {executable}")
 
 
 def package_linux(version: str, dist_dir: Path, output_dir: Path) -> list[Path]:
@@ -245,7 +313,11 @@ def write_zip(destination: Path, entries: list[tuple[Path, str]]) -> None:
 def checksum_lines(paths: list[Path]) -> list[str]:
     lines = []
     for path in paths:
-        digest = hashlib.sha256(path.read_bytes()).hexdigest().upper()
+        hasher = hashlib.sha256()
+        with path.open("rb") as handle:
+            for block in iter(lambda: handle.read(1024 * 1024), b""):
+                hasher.update(block)
+        digest = hasher.hexdigest().upper()
         lines.append(f"{digest}  {path.name}")
     return lines
 

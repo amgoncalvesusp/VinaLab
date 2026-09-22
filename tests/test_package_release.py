@@ -2,14 +2,43 @@
 """Unit tests for release artifact packaging helpers."""
 
 from pathlib import Path
+import os
 import tempfile
 import unittest
+from unittest import mock
 
-from scripts.package_release import prepare_linux_deb_tree
+from scripts.package_release import (
+    macos_architecture,
+    prepare_linux_deb_tree,
+    require_macos_app_bundle,
+)
 
 
 class PackageReleaseTests(unittest.TestCase):
     """Cover installer layout without requiring platform-specific build tools."""
+
+    def test_macos_architecture_uses_distribution_labels(self) -> None:
+        with mock.patch("scripts.package_release.platform.machine", return_value="arm64"):
+            self.assertEqual(macos_architecture(), "arm64")
+        with mock.patch("scripts.package_release.platform.machine", return_value="x86_64"):
+            self.assertEqual(macos_architecture(), "x64")
+
+    @unittest.skipUnless(os.name == "posix", "Mac executable modes require POSIX")
+    def test_macos_bundle_requires_info_plist_and_executable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bundle = Path(tmpdir) / "VinaLab.app"
+            contents = bundle / "Contents"
+            executable = contents / "MacOS" / "VinaLab"
+            executable.parent.mkdir(parents=True)
+            (contents / "Info.plist").write_text("plist", encoding="utf-8")
+            executable.write_bytes(b"fake executable")
+            executable.chmod(0o755)
+
+            require_macos_app_bundle(bundle)
+
+            (contents / "Info.plist").unlink()
+            with self.assertRaises(FileNotFoundError):
+                require_macos_app_bundle(bundle)
 
     def test_windows_pyinstaller_spec_has_no_gnina_bundle(self) -> None:
         """Windows PyInstaller builds should not include GNINA or libtorch DLLs."""

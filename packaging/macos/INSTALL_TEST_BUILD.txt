@@ -1,0 +1,12 @@
+VinaLab Light 1.1.1 — macOS test build
+
+This image is for internal notebook testing. It is not signed with an Apple
+Developer ID and has not been notarized by Apple. macOS Gatekeeper may warn or
+block it. Do not use it as a general public release.
+
+Choose the image matching the Mac:
+  arm64: Apple Silicon (M-series)
+  x64: Intel
+
+Requires macOS 14 Sonoma or later. Compare the image with
+SHA256SUMS-macos.txt before installing. Drag VinaLab.app to Applications.

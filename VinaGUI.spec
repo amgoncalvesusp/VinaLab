@@ -307,5 +307,27 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=["ui/icon.ico"],
+    icon=(
+        ["ui/icon.ico"]
+        if sys.platform.startswith("win")
+        else ["ui/icon.icns"]
+        if sys.platform == "darwin"
+        else None
+    ),
 )
+
+if sys.platform == "darwin":
+    app_version = Path("VERSION").read_text(encoding="utf-8").strip()
+    app = BUNDLE(
+        exe,
+        name="VinaLab.app",
+        icon="ui/icon.icns",
+        bundle_identifier="org.vinalab.light",
+        version=app_version,
+        info_plist={
+            "CFBundleDisplayName": "VinaLab Light",
+            "LSMinimumSystemVersion": "14.0",
+            "NSPrincipalClass": "NSApplication",
+            "NSHighResolutionCapable": True,
+        },
+    )
