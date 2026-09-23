@@ -5,6 +5,19 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      target:
+        description: Select a release workflow task
+        type: choice
+        options:
+          - full-release
+          - publish-macos-preview
+        default: full-release
+      source_run_id:
+        description: Successful macOS preview build run to publish
+        type: string
+        required: false
+        default: "35780146583"
 
 permissions:
   contents: write
@@ -16,6 +29,7 @@ concurrency:
 jobs:
   build:
     name: Build ${{ matrix.label }}
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.target == 'full-release' }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -168,6 +182,116 @@ jobs:
           name: ${{ matrix.artifact_name }}
           path: artifacts/*
           if-no-files-found: error
+
+  publish_macos_preview:
+    name: Publish validated macOS preview to v1.1.1
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.target == 'publish-macos-preview' }}
+    permissions:
+      actions: read
+      contents: write
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Verify source build run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]]
+          gh run view "$SOURCE_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --json conclusion,event,headSha,headBranch | \
+            jq -e '
+              .conclusion == "success" and
+              .event == "workflow_dispatch" and
+              .headSha == "0982aa9df204f4f23bea11b520f88b81deabc0d1" and
+              .headBranch == "codex/macos-v1.1.1-release-asset"
+            ' >/dev/null
+
+      - name: Download validated Mac installers
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.source_run_id }}
+          pattern: vinalab-macos-*
+          path: release-assets
+
+      - name: Verify Mac installers and checksums
+        run: |
+          set -euo pipefail
+          arm="release-assets/vinalab-macos-arm64/VinaLab-Light-1.1.1-macos-arm64-unsigned-preview.dmg"
+          intel="release-assets/vinalab-macos-x64/VinaLab-Light-1.1.1-macos-x64-unsigned-preview.dmg"
+          arm_manifest="release-assets/vinalab-macos-arm64/SHA256SUMS-macos.txt"
+          intel_manifest="release-assets/vinalab-macos-x64/SHA256SUMS-macos.txt"
+          test -s "$arm" && test -s "$intel"
+          test -s "$arm_manifest" && test -s "$intel_manifest"
+          (cd release-assets/vinalab-macos-arm64 && shasum -a 256 --check SHA256SUMS-macos.txt)
+          (cd release-assets/vinalab-macos-x64 && shasum -a 256 --check SHA256SUMS-macos.txt)
+          test "$(wc -l < "$arm_manifest")" -eq 1
+          test "$(wc -l < "$intel_manifest")" -eq 1
+          test "$(awk '{print $2}' "$arm_manifest")" = "VinaLab-Light-1.1.1-macos-arm64-unsigned-preview.dmg"
+          test "$(awk '{print $2}' "$intel_manifest")" = "VinaLab-Light-1.1.1-macos-x64-unsigned-preview.dmg"
+          cp "$arm" "$intel" release-assets/
+          cat "$arm_manifest" "$intel_manifest" > release-assets/SHA256SUMS-macos.txt
+          (cd release-assets && shasum -a 256 --check SHA256SUMS-macos.txt)
+
+      - name: Attach installers to the existing release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          for file in \
+            release-assets/VinaLab-Light-1.1.1-macos-arm64-unsigned-preview.dmg \
+            release-assets/VinaLab-Light-1.1.1-macos-x64-unsigned-preview.dmg \
+            release-assets/SHA256SUMS-macos.txt; do
+            name="$(basename "$file")"
+            expected="sha256:$(sha256sum "$file" | awk '{print $1}')"
+            current="$(gh release view v1.1.1 --repo "$GITHUB_REPOSITORY" \
+              --json assets --jq ".assets[] | select(.name == \"$name\") | .digest")"
+            if [[ -n "$current" ]]; then
+              if [[ "$current" != "$expected" ]]; then
+                echo "Release already has $name with a different digest" >&2
+                exit 1
+              fi
+            else
+              gh release upload v1.1.1 "$file" --repo "$GITHUB_REPOSITORY"
+            fi
+          done
+
+      - name: Add macOS preview guidance to the release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release view v1.1.1 --repo "$GITHUB_REPOSITORY" --json body --jq .body > release-notes.md
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("release-notes.md")
+          body = path.read_text(encoding="utf-8").replace("\r\n", "\n")
+          heading = "## macOS test preview"
+          downloads = "## Downloads\n"
+          if downloads not in body:
+              raise SystemExit("Existing release notes have no Downloads section; refusing to replace them")
+          if heading not in body:
+              preview = (
+                  f"{heading}\n\n"
+                  "The arm64 (Apple silicon) and x64 (Intel) DMGs are unsigned and not notarized. "
+                  "They are test previews; macOS Gatekeeper may warn or block them. They are not "
+                  "intended for general production distribution. Requires macOS 14 Sonoma or later. "
+                  "Verify the downloads with `SHA256SUMS-macos.txt` before use. Smoke tests passed "
+                  "on hosted macOS runners; validation on physical Mac notebooks is still pending.\n\n"
+              )
+              body = body.replace(downloads, preview + downloads, 1)
+          download_bullet = "- macOS arm64 (Apple silicon) and x64 (Intel) test-preview DMGs; macOS 14+.\n"
+          downloads_block = downloads + "\n"
+          if download_bullet.strip() not in body:
+              if downloads_block not in body:
+                  raise SystemExit("Downloads section format changed; refusing to replace existing notes")
+              body = body.replace(downloads_block, downloads_block + download_bullet, 1)
+          path.write_text(body, encoding="utf-8")
+          PY
+          gh release edit v1.1.1 --repo "$GITHUB_REPOSITORY" --notes-file release-notes.md
 
   release:
     name: Publish GitHub Release
