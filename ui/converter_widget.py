@@ -31,7 +31,7 @@ class ConversionWorker(QThread):
 
     def __init__(
         self, input_paths: list[Path], output_target: Path, molecule_type: str,
-        backend: str = "meeko",
+        backend: str = "auto",
     ) -> None:
         """Initialize the worker with conversion paths and molecule type."""
         super().__init__()
@@ -123,13 +123,9 @@ class ConversionWorker(QThread):
                 "",
                 "A conversão de receptor aceita entrada PDB, MOL2, SDF ou PDBQT.",
             )
-        if detected == "pdb":
-            return FileConverter.convert_pdb_to_pdbqt_ligand(input_path, output_path)
-        if detected == "mol2":
-            return FileConverter.convert_mol2_to_pdbqt_ligand(input_path, output_path)
-        if detected == "sdf":
-            return FileConverter._convert_ligand_rdkit_meeko(
-                input_path, output_path, "sdf"
+        if detected in {"pdb", "mol2", "sdf"}:
+            return FileConverter.convert_ligand(
+                input_path, output_path, detected, self.backend
             )
         return ConversionResult(
             False, output_path, "", "Formato de arquivo não reconhecido."
@@ -163,6 +159,7 @@ class ConverterWidget(QWidget):
         self.output_button = QPushButton()
         self.type_combo = QComboBox()
         self.backend_combo = QComboBox()
+        self.backend_combo.addItem("Automático", "auto")
         self.backend_combo.addItem("Meeko", "meeko")
         self.backend_combo.addItem("Open Babel", "openbabel")
         self.backend_label = QLabel()
@@ -181,10 +178,13 @@ class ConverterWidget(QWidget):
         """Retranslate converter panel labels."""
         self.lang = lang
         self.backend_label.setText("Preparação PDBQT" if lang == "pt" else "PDBQT preparation")
-        self.backend_combo.setItemText(0, "Meeko (padrão)" if lang == "pt" else "Meeko (default)")
+        self.backend_combo.setItemText(0, "Automático (Meeko → Open Babel para ligantes)" if lang == "pt"
+                                      else "Automatic (Meeko → Open Babel for ligands)")
         self.backend_combo.setToolTip(
-            "Meeko usa a conformação alternativa A do receptor. Resíduos incompletos não são removidos automaticamente."
-            if lang == "pt" else "Meeko uses receptor alternate conformation A. Incomplete residues are not removed automatically."
+            "Automático: ligantes usam Meeko e, em caso de falha, Open Babel; motivo e motor ficam no log. "
+            "Receptores continuam com Meeko (conformação alternativa A); resíduos incompletos não são removidos."
+            if lang == "pt" else "Automatic: ligands try Meeko, then Open Babel on failure; the reason and engine are logged. "
+            "Receptors still use Meeko (alternate conformation A); incomplete residues are not removed."
         )
         self.title_label.setText(I18n.get("converter_title", lang))
         self.subtitle_label.setText(I18n.get("converter_subtitle", lang))

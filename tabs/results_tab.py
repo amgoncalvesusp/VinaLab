@@ -57,6 +57,7 @@ from core.docking_engine import (
     find_obabel_executable,
 )
 from core.file_utils import clean_pdbqt_text
+from core.complex_export import atomic_export_bytes, read_export_atoms, split_flexible_pose
 from core.i18n import I18n
 from core.rmsd import (
     pdbqt_heavy_coordinates,
@@ -1703,27 +1704,28 @@ class ResultsTab(QWidget):
         self, row: dict, output_path: Path, export_format: str
     ) -> None:
         """Write one pose row to a target path, converting with Open Babel if needed."""
-        temporary_pdbqt = (
-            output_path
-            if export_format == "pdbqt"
-            else output_path.with_suffix(".pdbqt")
-        )
-        temporary_pdbqt.write_text(
-            extract_pose_model(
-                Path(row["output_file"]), int(row["mode"]), include_model=False
-            ),
-            encoding="utf-8",
-        )
+        if export_format not in {"pdbqt", "pdb", "mol2"}:
+            raise ValueError(f"Unsupported export format: {export_format}")
+        inputs = (row.get("output_file"), row.get("receptor_file"))
+        if any(path and Path(path).resolve() == output_path.resolve() for path in inputs):
+            raise ValueError("Pose export must not overwrite an input structure.")
+        pose_text = extract_pose_model(Path(row["output_file"]), int(row["mode"]), include_model=False)
+        pose_text, _ = split_flexible_pose(pose_text)
+        read_export_atoms(pose_text, "pdbqt")
         if export_format == "pdbqt":
+            atomic_export_bytes(output_path, pose_text.encode("utf-8"))
             return
-        convert_with_obabel(temporary_pdbqt, output_path)
-        temporary_pdbqt.unlink(missing_ok=True)
+        with tempfile.TemporaryDirectory(prefix="vinalab-pose-") as directory:
+            temporary_pdbqt = Path(directory) / "pose.pdbqt"
+            temporary_pdbqt.write_text(pose_text, encoding="utf-8")
+            convert_with_obabel(temporary_pdbqt, output_path)
 
     def _pose_text(self, row: dict) -> str:
         """Return the single-model PDBQT text for one result row's pose."""
-        return extract_pose_model(
+        text = extract_pose_model(
             Path(row["output_file"]), int(row["mode"]), include_model=False
         )
+        return split_flexible_pose(text)[0]
 
     def _pose_heavy_coordinates(self, row: dict):
         """Extract heavy-atom coordinates (file order) from one PDBQT pose model."""
@@ -1867,27 +1869,16 @@ class ResultsTab(QWidget):
         if not file_name:
             return
         output_path = Path(file_name)
-        pose_pdbqt = (
-            output_path
-            if output_path.suffix.lower() == ".pdbqt"
-            else output_path.with_suffix(".pdbqt")
-        )
-        pose_pdbqt.write_text(
-            extract_pose_model(
-                Path(row["output_file"]), int(row["mode"]), include_model=False
-            ),
-            encoding="utf-8",
-        )
-        if output_path.suffix.lower() != ".pdbqt":
-            if find_obabel_executable() is None:
-                QMessageBox.critical(
-                    self,
-                    I18n.get("rt_export_this_pose", self.lang),
-                    I18n.get("rd_obabel_missing_export", self.lang),
-                )
-                return
-            convert_with_obabel(pose_pdbqt, output_path)
-            pose_pdbqt.unlink(missing_ok=True)
+        if not output_path.suffix:
+            selected_format = next((fmt for fmt in ("pdbqt", "mol2", "pdb")
+                                    if f"*.{fmt}" in selected_filter), "pdbqt")
+            output_path = output_path.with_suffix("." + selected_format)
+        try:
+            self._export_pose_to_path(row, output_path, output_path.suffix[1:].lower())
+        except Exception as exc:
+            logger.exception("Pose export failed")
+            QMessageBox.critical(self, I18n.get("rt_export_this_pose", self.lang), str(exc))
+            return
         QMessageBox.information(
             self,
             I18n.get("rt_export_this_pose", self.lang),
@@ -1936,7 +1927,8 @@ class ResultsTab(QWidget):
         if key == "rmsd_lb":
             return float(row.get("rmsd_lb", 999999.0))
         if key == "reference_rmsd":
-            return float(row.get("reference_rmsd", 999999.0) or 999999.0)
+            value = row.get("reference_rmsd")
+            return 999999.0 if value in (None, "") else float(value)
         if key == "reference_validation":
             order = {"Pass": 0, "Fail": 1, "Not comparable": 2}
             return order.get(str(row.get("reference_validation", "")), 3)
@@ -1960,6 +1952,7 @@ class ResultsTab(QWidget):
             return
         self.state_path = output_dir / "vina_results_state.json"
         self._state_loaded_for = output_dir
+        self.table_state = {"pins": {}, "notes": {}, "filters": {}}
         if self.state_path.exists():
             try:
                 self.table_state = json.loads(

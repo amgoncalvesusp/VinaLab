@@ -12,12 +12,13 @@ from tabs.prepare_protein_tab import PrepareProteinTab
 from tabs.results_view import build_box_preview_html
 
 APP = QApplication.instance() or QApplication([])
+POSE_ATOMS = "ROOT\nATOM      1  C   UNL     1       1.000   2.000   3.000  1.00  0.00     0.000 C\nENDROOT\nTORSDOF 0\n"
 
 
 def test_export_dialog_runs_worker_and_finishes(tmp_path):
     from PySide6.QtCore import QEventLoop, QTimer
     source = tmp_path / "input.pdbqt"
-    source.write_text("REMARK pose\n")
+    source.write_text("REMARK pose\n" + POSE_ATOMS)
     row = dict(ligand_name="lig", mode=1, affinity=-1, scoring_key="vina",
                output_file=str(source))
     dialog = ExportComplexDialog([row], lang="en")
@@ -35,14 +36,14 @@ def test_export_dialog_runs_worker_and_finishes(tmp_path):
     assert not dialog.worker.isRunning()
     failed.assert_not_called()
     assert dialog.result() == 1
-    assert (tmp_path / "lig_vina_pose1.pdbqt").read_text() == "REMARK pose\n"
+    assert (tmp_path / "lig_vina_pose1.pdbqt").read_text() == "REMARK pose\n" + POSE_ATOMS
 
 
 def test_exports_preserve_scorers_and_existing_files(tmp_path):
     rows = []
     for scorer in ("vina", "vinardo"):
         source = tmp_path / (scorer + ".pdbqt")
-        source.write_text("REMARK " + scorer + "\n")
+        source.write_text("REMARK " + scorer + "\n" + POSE_ATOMS)
         rows.append(dict(ligand_name="lig", mode=1, affinity=-1,
                          scoring_key=scorer, output_file=str(source)))
     dialog = ExportComplexDialog(rows, lang="en")
@@ -52,8 +53,8 @@ def test_exports_preserve_scorers_and_existing_files(tmp_path):
     plans = dialog._planned_rows()
     worker = ExportWorker(plans, tmp_path, "pdbqt", False, "en")
     worker.run()
-    assert (tmp_path / "lig_vina_pose1.pdbqt").read_text() == "REMARK vina\n"
-    assert (tmp_path / "lig_vinardo_pose1.pdbqt").read_text() == "REMARK vinardo\n"
+    assert (tmp_path / "lig_vina_pose1.pdbqt").read_text() == "REMARK vina\n" + POSE_ATOMS
+    assert (tmp_path / "lig_vinardo_pose1.pdbqt").read_text() == "REMARK vinardo\n" + POSE_ATOMS
     assert all(row["_export_name"].endswith("_2") for row in dialog._planned_rows())
     assert "vina" in dialog.preview_label.text()
 

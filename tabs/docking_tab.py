@@ -6,8 +6,9 @@ VinaLab Light keeps the docking surface focused on AutoDock Vina native scoring:
 
 import json
 from pathlib import Path
+from time import monotonic
 
-from PySide6.QtCore import Qt, QUrl, Signal
+from PySide6.QtCore import Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -273,6 +274,7 @@ class DockingTab(QWidget):
     docking_launched = Signal()
     output_directory_changed = Signal(object)
     parameters_changed = Signal(dict)
+    run_parameters = Signal(dict)
     box_changed = Signal(dict)
 
     def __init__(self, setup_provider, results_consumer, report_consumer) -> None:
@@ -316,6 +318,15 @@ class DockingTab(QWidget):
         self.min_rmsd = self._double_spin(0, 20, 0.1, 2, 1.0)
         self.output_edit = QLineEdit()
         self.progress_bar = QProgressBar()
+        self.progress_status = QLabel()
+        self.progress_status.setWordWrap(True)
+        self.cancel_button = QPushButton()
+        self.cancel_button.setEnabled(False)
+        self.cancel_button.clicked.connect(self._cancel_docking)
+        self._run_started_at = 0.0
+        self._progress_timer = QTimer(self)
+        self._progress_timer.setInterval(1000)
+        self._progress_timer.timeout.connect(self._update_run_status)
         self.run_button = QPushButton()
         self.run_button.setObjectName("btn_primary")
         self.dependency_status_label = QLabel()
@@ -469,10 +480,10 @@ class DockingTab(QWidget):
 
         parameters = self.current_parameters()
         self.parameters_changed.emit(parameters)
+        self.run_parameters.emit(parameters)
         self.output_directory_changed.emit(output_directory)
         self.results_consumer.clear_results()
-        self.progress_bar.setValue(0)
-        self.run_button.setEnabled(False)
+        self._begin_run()
         self.docking_launched.emit()
 
         self.worker = DockingWorker(
@@ -483,7 +494,6 @@ class DockingTab(QWidget):
             output_directory=output_directory,
             parameters=parameters,
         )
-        self.worker.progress_signal.connect(self.progress_bar.setValue)
         self.worker.log_signal.connect(self.results_consumer.append_log)
         self.worker.result_signal.connect(self.results_consumer.add_results)
         self.worker.error_signal.connect(self._show_error)
@@ -537,7 +547,7 @@ class DockingTab(QWidget):
         self.results_consumer.append_log(
             I18n.get("dt_validation_start", self.lang).format(path=output_directory)
         )
-        self.run_button.setEnabled(False)
+        self._begin_run()
         self.docking_launched.emit()
         self.worker = DockingWorker(
             receptor_path=self.setup_provider.receptor_path(),
@@ -547,7 +557,6 @@ class DockingTab(QWidget):
             output_directory=output_directory,
             parameters=parameters,
         )
-        self.worker.progress_signal.connect(self.progress_bar.setValue)
         self.worker.log_signal.connect(self.results_consumer.append_log)
         self.worker.result_signal.connect(self._collect_validation_results)
         self.worker.error_signal.connect(self._show_error)
@@ -577,6 +586,12 @@ class DockingTab(QWidget):
     def retranslate_ui(self, lang: str) -> None:
         """Retranslate docking tab controls and tooltips."""
         self.lang = lang
+        self.cancel_button.setText("Cancelar após tarefa atual" if lang == "pt" else "Cancel after current job")
+        self.progress_bar.setToolTip(
+            "Durante o cálculo, a barra indica atividade; o contador mostra tarefas processadas. Não é uma estimativa de tempo restante."
+            if lang == "pt" else
+            "While computing, the bar indicates activity; the counter shows processed jobs. It does not estimate remaining time."
+        )
         self.scoring_selector.retranslate_ui(lang)
         self.search_group.setTitle(I18n.get("search_box", lang))
         self.atom_center_group.setTitle(I18n.get("protein_atom_center", lang))
@@ -704,9 +719,11 @@ class DockingTab(QWidget):
         button_row = QHBoxLayout()
         self.run_button.clicked.connect(self.launch_docking)
         button_row.addStretch()
+        button_row.addWidget(self.cancel_button)
         button_row.addWidget(self.run_button)
         layout.addLayout(button_row)
         layout.addWidget(self.progress_bar)
+        layout.addWidget(self.progress_status)
         outer_layout.addWidget(ScrollManager.wrap(content))
 
     def _box_size_preset_row(self) -> QHBoxLayout:
@@ -1470,13 +1487,13 @@ class DockingTab(QWidget):
         }.items():
             if key in values:
                 widget.setValue(int(float(values[key])))
-        if "seed" in values and int(float(values["seed"])) != 0:
-            self.fix_seed.setChecked(True)
-        if "out" in values and values["out"]:
-            self.output_edit.setText(str(Path(values["out"])))
-            self.output_directory_changed.emit(Path(values["out"]))
-        if "reference_ligand" in values and values["reference_ligand"]:
-            self.reference_ligand_edit.setText(str(Path(values["reference_ligand"])))
+        if "seed" in values:
+            self.fix_seed.setChecked(int(float(values["seed"])) != 0)
+        if "out" in values:
+            self.output_edit.setText(values["out"])
+            self.output_directory_changed.emit(self.output_directory())
+        if "reference_ligand" in values:
+            self.reference_ligand_edit.setText(values["reference_ligand"])
         self.parameters_changed.emit(self.current_parameters())
 
     def _pick_output_directory(self) -> None:
@@ -1492,10 +1509,54 @@ class DockingTab(QWidget):
 
     def _worker_finished(self) -> None:
         """Re-enable execution controls after worker completion."""
+        self._progress_timer.stop()
         self.run_button.setEnabled(True)
+        self.cancel_button.setEnabled(False)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(100 if self.worker.run_status == "completed" else 0)
+        self._update_run_status()
+
+    def _begin_run(self) -> None:
+        """Show activity without inventing within-job percentage or ETA."""
+        self.run_button.setEnabled(False)
+        self.cancel_button.setEnabled(True)
+        self.progress_bar.setRange(0, 0)
+        self._run_started_at = monotonic()
+        self.progress_status.setText("Preparando…" if self.lang == "pt" else "Preparing…")
+        self._progress_timer.start()
+
+    def _update_run_status(self) -> None:
+        if self.worker is None:
+            return
+        states = {
+            "pending": ("Preparando", "Preparing"),
+            "running": ("Em execução", "Running"),
+            "completed": ("Concluído", "Completed"),
+            "failed": ("Falhou", "Failed"),
+            "cancelled": ("Cancelado", "Cancelled"),
+        }
+        state = states[self.worker.run_status][0 if self.lang == "pt" else 1]
+        elapsed = max(0, int(monotonic() - self._run_started_at)) if self._run_started_at else 0
+        counts = f"{self.worker.completed_jobs}/{self.worker.total_jobs}"
+        if self.lang == "pt":
+            text = f"{state} · {elapsed}s · {counts} tarefas processadas · {self.worker.failed_jobs} falhas"
+        else:
+            text = f"{state} · {elapsed}s · {counts} jobs processed · {self.worker.failed_jobs} failures"
+        self.progress_status.setText(text)
+
+    def _cancel_docking(self) -> None:
+        """Stop between native jobs; never terminate an active Vina Python call."""
+        if self.worker and self.worker.isRunning():
+            self.worker.requestInterruption()
+            self.cancel_button.setEnabled(False)
+            self.results_consumer.append_log(
+                "Cancelamento solicitado: aguardando a tarefa atual terminar."
+                if self.lang == "pt" else "Cancellation requested: waiting for the current job to finish."
+            )
 
     def _show_error(self, message: str) -> None:
         """Show a worker error dialog."""
+        self.results_consumer.append_log(f"ERROR: {message}")
         QMessageBox.critical(self, I18n.get("error_title", self.lang), message)
 
     def _output_row(self) -> QHBoxLayout:

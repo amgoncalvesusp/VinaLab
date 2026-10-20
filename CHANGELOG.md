@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.2 - 2026-10-19
+
+- Retry failed Meeko ligand preparation automatically with Open Babel, retaining engine diagnostics and chemistry validation.
+- Apply loaded seed/reference and rigid-receptor settings on the next run; snapshot run parameters for reproducible reports.
+- Preserve source files during charge repair and reject normalized ligand-name collisions.
+- Preserve neighboring PDBQT files during pose export, receptor residue metadata, and docked flexible-receptor coordinates in complexes.
+- Show calculation activity, elapsed time and failed-job counts; retain per-run diagnostic logs.
+- Reset result annotations between output folders and sort exact zero RMSD correctly.
+- Extend source and frozen-runtime regressions for fallback, repeated runs, all export formats and coordinate preservation.
+
 ## 1.1.0 - 2026-09-03
 
 Correcoes e melhorias a partir da avaliacao de um usuario (docking de peptideos contra KPC-2).

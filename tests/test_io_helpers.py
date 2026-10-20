@@ -267,7 +267,7 @@ class ComplexExportTests(unittest.TestCase):
         pose_lines = [line for line in text.splitlines() if line.startswith("HETATM")]
         self.assertEqual(len(pose_lines), 2)
         self.assertTrue(all(line[21] == "Z" for line in pose_lines))
-        self.assertIn("TER", text.splitlines())
+        self.assertIn("TER   ", text.splitlines())
 
     def test_conect_records_point_at_renumbered_pose_atoms(self) -> None:
         text = build_complex_pdb(self.RECEPTOR, self.POSE)

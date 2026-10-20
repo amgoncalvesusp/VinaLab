@@ -73,7 +73,10 @@ def run(output_directory: str, receptor_path: str | None = None, ligand_path: st
                     raise RuntimeError(result.stdout + result.stderr)
                 report[scoring] = output.name
                 from tabs.results_dialogs import ExportWorker
-                from core.complex_export import read_export_atoms
+                from core.complex_export import read_export_atoms, validate_export_atoms
+                from core.docking_engine import extract_pose_model
+                expected_pose = read_export_atoms(extract_pose_model(output, 1), "pdbqt")
+                expected_complex = read_export_atoms(converted.output_path.read_text(encoding="utf-8"), "pdbqt") + expected_pose
                 exports = root / f"exports_{scoring}"
                 exports.mkdir(exist_ok=True)
                 row = {"_export_name": scoring, "output_file": str(output), "mode": 1,
@@ -86,6 +89,17 @@ def run(output_directory: str, receptor_path: str | None = None, ligand_path: st
                     worker._export_row(row, destination, fmt)
                     complex_fmt = "mol2" if fmt == "mol2" else "pdb"
                     complex_path = destination / f"{scoring}_complex.{complex_fmt}"
+                    for path, expected, export_fmt in (
+                        (complex_path, expected_complex, complex_fmt),
+                        (destination / f"{scoring}.{fmt}", expected_pose, fmt),
+                    ):
+                        text = path.read_text(encoding="utf-8")
+                        validate_export_atoms(expected, text, export_fmt)
+                        if export_fmt == "pdb":
+                            from Bio.PDB import PDBParser
+                            structure = PDBParser(PERMISSIVE=False).get_structure("export", io.StringIO(text))
+                            if len(list(structure.get_atoms())) != len(expected):
+                                raise RuntimeError("PDB parser lost atoms in exported structure")
                     export_counts[fmt] = len(read_export_atoms(complex_path.read_text(encoding="utf-8"), complex_fmt))
                 report[f"{scoring}_complex_atoms"] = export_counts
             report["success"] = True

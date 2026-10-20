@@ -85,17 +85,40 @@ class FileConverter:
     def convert_pdb_to_pdbqt_ligand(
         input_path: Path, output_path: Path
     ) -> ConversionResult:
-        """Convert a ligand PDB file to PDBQT exclusively via RDKit + Meeko."""
-        return FileConverter._convert_ligand_rdkit_meeko(input_path, output_path, "pdb")
+        """Prepare a PDB ligand with Meeko, retrying Open Babel when needed."""
+        return FileConverter.convert_ligand(input_path, output_path, "pdb")
 
     @staticmethod
     def convert_mol2_to_pdbqt_ligand(
         input_path: Path, output_path: Path
     ) -> ConversionResult:
-        """Convert a ligand MOL2 file to PDBQT exclusively via RDKit + Meeko."""
-        return FileConverter._convert_ligand_rdkit_meeko(
+        """Prepare a MOL2 ligand with Meeko, retrying Open Babel when needed."""
+        return FileConverter.convert_ligand(
             input_path, output_path, "mol2"
         )
+
+    @staticmethod
+    @atomic_conversion("ligand")
+    def convert_ligand(
+        input_path: Path, output_path: Path, input_format: str, backend: str = "auto"
+    ) -> ConversionResult:
+        """Use the requested engine; automatic mode reports every failed attempt."""
+        if backend not in {"auto", "meeko", "openbabel"}:
+            raise ValueError(f"Preparador de ligante desconhecido: {backend}")
+        if input_format not in {"pdb", "mol2", "sdf"}:
+            raise ValueError(f"Formato de ligante não suportado: {input_format}")
+        if backend == "openbabel":
+            return FileConverter._convert_ligand_via_obabel(input_path, output_path)
+        primary = FileConverter._convert_ligand_rdkit_meeko(input_path, output_path, input_format)
+        if primary.success or backend == "meeko":
+            return primary
+        reason = "\n".join(part for part in (primary.log, primary.errors) if part)
+        logger.warning("Meeko falhou para %s; tentando Open Babel: %s", input_path.name, reason)
+        fallback = FileConverter._convert_ligand_via_obabel(input_path, output_path)
+        log = f"Meeko falhou:\n{reason}\nFallback automático: Open Babel.\n{fallback.log}"
+        if fallback.success:
+            logger.info("Ligante %s preparado com Open Babel (fallback automático).", input_path.name)
+        return ConversionResult(fallback.success, output_path, log, fallback.errors)
 
     @staticmethod
     @atomic_conversion("ligand")
@@ -184,7 +207,7 @@ class FileConverter:
                 output_path,
                 multi_note,
                 f"Erro: não foi possível converter o ligante {input_format.upper()} "
-                f"com RDKit/Meeko: {exc}\nRevise a estrutura ou selecione Open Babel explicitamente.",
+                f"com RDKit/Meeko: {exc}",
             )
 
     @staticmethod
@@ -193,7 +216,7 @@ class FileConverter:
     ) -> ConversionResult:
         """Open Babel ligand fallback: convert MOL2/SDF/PDB straight to PDBQT.
 
-        Open Babel infers the input format from the file extension, adds hydrogens
+        Open Babel receives the detected input format, adds hydrogens
         and Gasteiger charges, and writes a single-ligand PDBQT. Used when the
         RDKit + Meeko pipeline cannot parse the input (common with some MOL2/SDF
         variants), matching the "go through an intermediate and let the converter
@@ -496,7 +519,7 @@ class FileConverter:
         if detected == "mol2":
             return FileConverter.convert_mol2_to_pdbqt_ligand(input_path, output_path)
         if detected == "sdf":
-            return FileConverter._convert_ligand_rdkit_meeko(
+            return FileConverter.convert_ligand(
                 input_path, output_path, "sdf"
             )
         return ConversionResult(
@@ -521,7 +544,10 @@ class FileConverter:
 
     @staticmethod
     def _obabel_input_format(input_path: Path) -> str:
-        """Map a file suffix to an Open Babel input format string."""
+        """Prefer detected molecular contents over a missing or misleading suffix."""
+        detected = FileConverter._detect_format(input_path)
+        if detected != "unknown":
+            return detected
         suffix = input_path.suffix.lower().lstrip(".")
         return {
             "pdb": "pdb",
@@ -611,6 +637,13 @@ class FileConverter:
             return ConversionResult(False, output_path, "", "O receptor contém múltiplas moléculas/registros. Selecione uma estrutura por arquivo.")
         if multi_note:
             previous_error = previous_error + "\n" + multi_note
+        if input_format == "pdb":
+            from core.receptor_input import normalize_receptor_pdb
+            normalized, repaired_count = normalize_receptor_pdb(input_path.read_text(encoding="utf-8-sig"))
+            input_path = output_path.parent / "normalized_input.pdb"
+            input_path.write_text(normalized, encoding="utf-8")
+            if repaired_count:
+                previous_error += f"\nColunas PDB normalizadas: {repaired_count}."
         if not receptor and input_format in {"sdf", "mol"}:
             from openbabel import pybel
             molecule = pybel.readstring(input_format, input_path.read_text(encoding="utf-8-sig"))
@@ -644,7 +677,8 @@ class FileConverter:
                 f"{previous_error}\nOpen Babel CLI não encontrado.",
             )
 
-        command = [str(obabel), str(input_path), "-O", str(output_path)]
+        command = [str(obabel), "-i" + FileConverter._obabel_input_format(input_path),
+                   str(input_path), "-O", str(output_path)]
         if receptor:
             command.append("-xr")
         else:
@@ -685,7 +719,7 @@ class FileConverter:
             return ConversionResult(
                 True,
                 output_path,
-                f"{descriptor} convertido com Open Babel CLI (fallback).",
+                f"{previous_error}\n{descriptor} convertido com Open Babel CLI (fallback).",
                 completed.stderr.strip(),
             )
         return ConversionResult(

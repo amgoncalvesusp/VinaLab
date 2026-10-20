@@ -32,6 +32,9 @@ RECEPTOR_ONLY_TAGS = {
 }
 
 RECEPTOR_ROLES = {"receptor", "rigid_receptor", "flex_receptor"}
+FLEX_RECEPTOR_TAGS = RECEPTOR_ONLY_TAGS | {
+    "BEGIN_RES", "END_RES", "ROOT", "ENDROOT", "BRANCH", "ENDBRANCH",
+}
 
 VALID_AUTODOCK_TYPES = {
     "CG0", "CG1", "CG2", "CG3", "G0", "G1", "G2", "G3",
@@ -797,7 +800,10 @@ def sanitize_pdbqt_for_vina(
         removed_tags["NUL"] = nul_count
     original_lines = clean_pdbqt_text(original_text).splitlines()
 
-    allowed_tags = RECEPTOR_ONLY_TAGS if role in RECEPTOR_ROLES else ALLOWED_PDBQT_TAGS
+    if role == "flex_receptor":
+        allowed_tags = FLEX_RECEPTOR_TAGS
+    else:
+        allowed_tags = RECEPTOR_ONLY_TAGS if role in RECEPTOR_ROLES else ALLOWED_PDBQT_TAGS
     for line in original_lines:
         if not line.strip():
             kept_lines.append(line)

@@ -15,6 +15,7 @@ from pathlib import Path
 from PySide6.QtWidgets import QTableWidget
 
 from core.docking_engine import extract_pose_model
+from core.complex_export import _merge_pdb, merge_flexible_receptor, split_flexible_pose
 from core.file_utils import clean_pdbqt_text
 
 HEADER_TOOLTIPS = {
@@ -107,6 +108,9 @@ def prepare_pose_view_files(row: dict, view_dir: Path) -> tuple[Path, Path]:
         / f"{safe_export_name(row['ligand_name'])}_pose{int(row['mode'])}.pdbqt"
     )
     pose_text = extract_pose_model(output_file, int(row["mode"]), include_model=False)
+    pose_text, flexible_text = split_flexible_pose(pose_text)
+    if row.get("flexible_receptor_file") and not flexible_text:
+        raise ValueError("Docked flexible receptor coordinates are missing from the selected pose.")
     if not any(
         line.startswith(("ATOM", "HETATM"))
         for line in clean_pdbqt_text(pose_text).splitlines()
@@ -121,7 +125,7 @@ def prepare_pose_view_files(row: dict, view_dir: Path) -> tuple[Path, Path]:
     )
     receptor_pdb.write_text(
         pdbqt_text_to_view_pdb(
-            receptor_file.read_text(encoding="utf-8", errors="replace"),
+            merge_flexible_receptor(receptor_file.read_text(encoding="utf-8", errors="replace"), flexible_text),
             include_conect=False,
         ),
         encoding="utf-8",
@@ -186,42 +190,20 @@ def pdbqt_text_to_view_pdb(text: str, include_conect: bool) -> str:
 def build_complex_pdb(receptor_pdbqt_text: str, pose_pdbqt_text: str) -> str:
     """Merge a receptor and one docked pose into a single PDB complex.
 
-    Atom serials are renumbered across both molecules so the pose CONECT records
-    stay unambiguous, and the pose is written as HETATM in chain Z so viewers and
-    selections (`chain Z`, `hetatm`) can address the ligand on its own.
+    Atom serials and connectivity are remapped together, and the ligand uses
+    an unused chain so it remains distinct even when the receptor has chain Z.
     """
     receptor_atoms, _ = parse_pdbqt_atoms(receptor_pdbqt_text)
-    pose_atoms, pose_bonds = parse_pdbqt_atoms(pose_pdbqt_text)
+    pose_atoms, _ = parse_pdbqt_atoms(pose_pdbqt_text)
     if not receptor_atoms:
         raise ValueError("O receptor não contém átomos PDBQT para montar o complexo.")
     if not pose_atoms:
         raise ValueError("A pose não contém átomos PDBQT para montar o complexo.")
 
-    lines: list[str] = []
-    serial = 0
-    for atom in receptor_atoms:
-        serial += 1
-        lines.append(_format_view_pdb_atom({**atom, "serial": serial}))
-    lines.append("TER")
-
-    pose_serial_map: dict[int, int] = {}
-    renumbered_pose: list[dict] = []
-    for atom in pose_atoms:
-        serial += 1
-        pose_serial_map[int(atom["serial"])] = serial
-        renumbered_pose.append(
-            {**atom, "serial": serial, "record": "HETATM", "chain": "Z"}
-        )
-    lines.extend(_format_view_pdb_atom(atom) for atom in renumbered_pose)
-
-    remapped_bonds = {
-        tuple(sorted((pose_serial_map[left], pose_serial_map[right])))
-        for left, right in pose_bonds
-        if left in pose_serial_map and right in pose_serial_map
-    }
-    lines.extend(_infer_conect_records(renumbered_pose, remapped_bonds))
-    lines.append("END")
-    return "\n".join(lines) + "\n"
+    return _merge_pdb(
+        pdbqt_text_to_view_pdb(receptor_pdbqt_text, include_conect=False),
+        pdbqt_text_to_view_pdb(pose_pdbqt_text, include_conect=True),
+    )
 
 
 def _pdbqt_branch_bond(line: str) -> tuple[int, int] | None:
@@ -241,7 +223,7 @@ def _pdbqt_atom_record(line: str) -> dict | None:
         serial = int(line[6:11])
         name = line[12:16].strip() or "X"
         resname = line[17:20].strip() or "LIG"
-        chain = (line[21].strip() if len(line) > 21 else "") or "A"
+        chain = line[21] if len(line) > 21 else " "
         resid = int((line[22:26].strip() or "1").split()[0])
         x = float(line[30:38])
         y = float(line[38:46])
@@ -275,16 +257,21 @@ def _pdbqt_atom_record(line: str) -> dict | None:
         "z": z,
         "element": element,
         "record": "HETATM" if line.startswith("HETATM") else "ATOM",
+        "name_field": line[12:16] if len(line) >= 54 else f"{name:<4}",
+        "altloc": line[16:17] or " ",
+        "icode": line[26:27] or " ",
+        "occupancy": line[54:60].strip() or "1.00",
+        "bfactor": line[60:66].strip() or "0.00",
     }
 
 
 def _format_view_pdb_atom(atom: dict) -> str:
     """Format one atom as a standards-compatible PDB line."""
     return (
-        f"{atom['record']:<6}{int(atom['serial']):5d} {atom['name']:<4} {atom['resname']:>3} "
-        f"{atom['chain']}{int(atom['resid']):4d}    "
+        f"{atom['record']:<6}{int(atom['serial']):5d} {atom['name_field']}{atom['altloc']}{atom['resname']:>3} "
+        f"{atom['chain']}{int(atom['resid']):4d}{atom['icode']}   "
         f"{float(atom['x']):8.3f}{float(atom['y']):8.3f}{float(atom['z']):8.3f}"
-        f"  1.00  0.00          {atom['element']:>2}"
+        f"{atom['occupancy']:>6}{atom['bfactor']:>6}          {atom['element']:>2}"
     )
 
 

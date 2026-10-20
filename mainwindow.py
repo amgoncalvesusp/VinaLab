@@ -93,7 +93,7 @@ class MainWindow(QMainWindow):
         self.docking_tab.output_directory_changed.connect(
             self.report_tab.set_output_directory
         )
-        self.docking_tab.parameters_changed.connect(self.report_tab.set_parameters)
+        self.docking_tab.run_parameters.connect(self.report_tab.set_parameters)
         self.docking_tab.box_changed.connect(self.results_tab.update_box_preview)
         self.results_tab.results_changed.connect(self.report_tab.set_results)
         self.results_tab.chart_updated.connect(self.report_tab.set_chart_path)

@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.file_utils import discover_pdbqt_files, is_pdbqt_file, validate_optional_pdbqt
+from core.file_utils import discover_pdbqt_files, is_pdbqt_file, safe_stem, validate_optional_pdbqt
 from core.i18n import I18n
 from core.scrolling import ScrollManager
 
@@ -71,10 +71,14 @@ class SetupTab(QWidget):
 
     def rigid_receptor_path(self) -> Path | None:
         """Return the selected rigid receptor PDBQT path, if any."""
+        if self.fully_rigid_checkbox.isChecked():
+            return None
         return self._path_from_edit(self.rigid_receptor_edit)
 
     def flexible_receptor_path(self) -> Path | None:
         """Return the selected flexible receptor PDBQT path, if any."""
+        if self.fully_rigid_checkbox.isChecked():
+            return None
         return self._path_from_edit(self.flex_receptor_edit)
 
     def set_receptor_file(self, path: str) -> None:
@@ -128,7 +132,7 @@ class SetupTab(QWidget):
         )
         if not discovered or not all(is_pdbqt_file(path) for path in discovered):
             warnings.append(I18n.get("warn_ligand", self.lang))
-        names = [path.stem.casefold() for path in discovered]
+        names = [safe_stem(path).casefold() for path in discovered]
         if len(names) != len(set(names)):
             warnings.append("Os ligantes precisam de nomes de arquivo distintos para evitar sobrescrever resultados."
                             if self.lang == "pt" else "Ligands need distinct filenames to avoid overwriting results.")
@@ -205,8 +209,8 @@ class SetupTab(QWidget):
         """Hide flexible-sidechain input when 'Usar receptor totalmente rígido' is checked."""
         self.flex_receptor_edit.setVisible(not fully_rigid)
         self.flex_receptor_label.setVisible(not fully_rigid)
-        if fully_rigid:
-            self.flex_receptor_edit.clear()
+        self.rigid_receptor_edit.setEnabled(not fully_rigid)
+        self.rigid_receptor_label.setEnabled(not fully_rigid)
         self.validate_inputs()
 
     def _build_ligand_group(self) -> QGroupBox:

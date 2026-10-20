@@ -2,6 +2,7 @@
 """Unit tests for docking helper utilities."""
 
 from pathlib import Path
+import io
 import os
 import sys
 import tempfile
@@ -299,20 +300,23 @@ class DockingHelperTests(unittest.TestCase):
             )
             worker.log_signal = types.SimpleNamespace(emit=lambda _message: None)
 
-            def fake_run(command, **_kwargs):
+            def fake_popen(command, **_kwargs):
                 output = Path(command[command.index("--out") + 1])
                 output.write_text(
                     "MODEL 1\nREMARK VINA RESULT: -1.0 0.0 0.0\nENDMDL\n",
                     encoding="utf-8",
                 )
-                return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+                process = mock.MagicMock(stdout=io.StringIO(""))
+                process.__enter__.return_value = process
+                process.wait.return_value = 0
+                return process
 
             with (
                 mock.patch(
                     "core.docking_engine.native_tool_env",
                     return_value={"PATH": "native"},
                 ) as env_mock,
-                mock.patch("core.docking_engine.subprocess.run", side_effect=fake_run) as run_mock,
+                mock.patch("core.docking_engine.subprocess.Popen", side_effect=fake_popen) as run_mock,
             ):
                 rows = worker._dock_single_ligand_cli(ligand, vina)
 

@@ -26,6 +26,89 @@ class ExportAtom:
     xyz: tuple[float, float, float]
 
 
+def split_flexible_pose(text: str) -> tuple[str, str]:
+    """Separate docked flexible receptor atoms from the ligand torsion tree."""
+    ligand, flexible = [], []
+    in_residue = False
+    residue_atoms = 0
+    for line in text.splitlines():
+        if line.startswith("BEGIN_RES"):
+            if in_residue:
+                raise ValueError("Nested flexible residue blocks in docked pose.")
+            in_residue = True
+            residue_atoms = 0
+        elif line.startswith("END_RES"):
+            if not in_residue:
+                raise ValueError("Unmatched flexible residue terminator in docked pose.")
+            if not residue_atoms:
+                raise ValueError("Empty flexible residue block in docked pose.")
+            in_residue = False
+        elif in_residue:
+            if line.startswith(("ATOM  ", "HETATM")):
+                flexible.append(line)
+                residue_atoms += 1
+        else:
+            ligand.append(line)
+    if in_residue:
+        raise ValueError("Incomplete flexible residue block in docked pose.")
+    return "\n".join(ligand) + "\n", "\n".join(flexible) + "\n" if flexible else ""
+
+
+def merge_flexible_receptor(receptor_text: str, flexible_text: str) -> str:
+    """Replace shared anchors and append movable atoms at their docked positions."""
+    if not flexible_text:
+        return receptor_text
+    read_export_atoms(receptor_text, "pdbqt")
+    read_export_atoms(flexible_text, "pdbqt")
+
+    def atom_key(line: str) -> tuple[str, ...]:
+        return (line[12:16].strip(), line[16:17], line[17:20], line[21:27])
+
+    receptor = tuple(line for line in receptor_text.splitlines() if line.startswith(("ATOM  ", "HETATM")))
+    flexible = tuple(line for line in flexible_text.splitlines() if line.startswith(("ATOM  ", "HETATM")))
+    for rows in (receptor, flexible):
+        if len({atom_key(line) for line in rows}) != len(rows):
+            raise ValueError("Ambiguous duplicate receptor atom identities in flexible export.")
+    replacements = {atom_key(line): line for line in flexible}
+    original_keys = {atom_key(line) for line in receptor}
+    merged = tuple(replacements.get(atom_key(line), line) for line in receptor) + tuple(
+        line for line in flexible if atom_key(line) not in original_keys
+    )
+    if len(merged) > 99999:
+        raise ValueError("Flexible receptor exceeds the PDBQT limit of 99999 atoms.")
+    # PDB readers require each chain and residue to occupy one contiguous block.
+    chains = {key: index for index, key in enumerate(dict.fromkeys(line[21] for line in merged))}
+    residues = {key: index for index, key in enumerate(dict.fromkeys(line[17:27] for line in merged))}
+    ordered = sorted(merged, key=lambda line: (chains[line[21]], residues[line[17:27]]))
+    return "\n".join(line[:6] + f"{index:5d}" + line[11:] for index, line in enumerate(ordered, 1)) + "\n"
+
+
+def unique_pdb_atom_names(text: str) -> str:
+    """Disambiguate repeated atom names without changing serials or coordinates."""
+    lines = text.splitlines()
+    reserved = {(line[16:27], line[12:16].strip()) for line in lines
+                if line.startswith(("ATOM  ", "HETATM"))}
+    seen = set()
+    output = []
+    for line in lines:
+        if line.startswith(("ATOM  ", "HETATM")):
+            residue, name = line[16:27], line[12:16].strip()
+            if (residue, name) in seen:
+                element = _pdb_atom(line, "pdb").element
+                name = next((f"{element}{index}" for index in range(1, 10 ** (4 - len(element)))
+                             if (residue, f"{element}{index}") not in reserved), None)
+                if name is None:
+                    raise ValueError("No unique four-column PDB atom name available in this residue; use MOL2.")
+                field = f" {name:<3}" if len(element) == 1 and len(name) < 4 else f"{name:<4}"
+                line = line[:12] + field + line[16:]
+                reserved.add((residue, name))
+            seen.add((residue, name))
+        elif line.strip() in {"TER", "END"}:
+            line = line.strip().ljust(6)
+        output.append(line)
+    return "\n".join(output) + "\n"
+
+
 def _mol2_sections(text: str) -> dict[str, tuple[str, ...]]:
     sections: dict[str, tuple[str, ...]] = {}
     for block in text.split("@<TRIPOS>")[1:]:
@@ -215,6 +298,7 @@ def _merge_pdb(receptor_text: str, pose_text: str) -> str:
                     raise ValueError("Invalid PDB CONECT atom reference.")
                 conect_lines.append("CONECT" + "".join(f"{serial_map[serial]:5d}" for serial in ids))
     result = "\n".join(["REMARK 950 PDBQT-DERIVED TOPOLOGY; NO ADDED ATOMS", *atom_lines, *conect_lines, "END", ""])
+    result = unique_pdb_atom_names(result)
     validate_export_atoms(expected, result, "pdb")
     return result
 
@@ -235,6 +319,16 @@ def export_complex(receptor_path: Path, pose_path: Path, output_path: Path) -> P
     if output_path.resolve() in {receptor_path.resolve(), pose_path.resolve()}:
         raise ValueError("Complex output must not overwrite an input structure.")
     with tempfile.TemporaryDirectory(prefix="vinalab-complex-") as directory:
+        if pose_path.suffix.lower() == ".pdbqt":
+            pose_text, flexible_text = split_flexible_pose(pose_path.read_text(encoding="utf-8"))
+            if flexible_text:
+                if receptor_path.suffix.lower() != ".pdbqt":
+                    raise ValueError("Flexible complex export requires the PDBQT receptor used for docking.")
+                receptor_text = merge_flexible_receptor(receptor_path.read_text(encoding="utf-8"), flexible_text)
+                receptor_path = Path(directory) / "receptor.pdbqt"
+                receptor_path.write_text(receptor_text, encoding="utf-8")
+                pose_path = Path(directory) / "pose.pdbqt"
+                pose_path.write_text(pose_text, encoding="utf-8")
         receptor = Path(directory) / ("receptor." + format_name)
         ligand = Path(directory) / ("ligand." + format_name)
         convert_with_obabel(receptor_path, receptor)

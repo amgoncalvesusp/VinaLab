@@ -2,6 +2,9 @@
 """Threaded AutoDock Vina docking engine for VinaLab."""
 
 import csv
+from copy import deepcopy
+from datetime import datetime
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -13,6 +16,7 @@ import zipfile
 
 from PySide6.QtCore import QThread, Signal
 
+from core.complex_export import split_flexible_pose
 from core.file_utils import (
     clean_pdbqt_file,
     clean_pdbqt_text,
@@ -134,6 +138,7 @@ def convert_with_obabel(input_path: Path, output_path: Path) -> Path:
     """Convert without exposing Unicode filenames to native Open Babel file I/O."""
     from core.complex_export import (
         atomic_export_bytes, macrocycle_export_pdb, read_export_atoms, validate_export_atoms,
+        unique_pdb_atom_names,
     )
 
     obabel = find_obabel_executable()
@@ -169,6 +174,8 @@ def convert_with_obabel(input_path: Path, output_path: Path) -> Path:
                                or "Falha na conversão com OpenBabel.")
         if not target.is_file() or target.stat().st_size == 0:
             raise RuntimeError("Open Babel produced no molecular output. " + completed.stderr.strip())
+        if output_format == "pdb":
+            target.write_text(unique_pdb_atom_names(target.read_text(encoding="utf-8")), encoding="utf-8")
         if expected is not None:
             validate_export_atoms(expected, target.read_text(encoding="utf-8"), output_format)
         atomic_export_bytes(output_path, target.read_bytes())
@@ -205,12 +212,18 @@ class DockingWorker(QThread):
         """Initialize the worker with validated file paths and docking parameters."""
         super().__init__()
         self.receptor_path = receptor_path
+        self.original_receptor_path = receptor_path
         self.rigid_receptor_path = rigid_receptor_path
         self.flexible_receptor_path = flexible_receptor_path
         self.ligand_paths = list(ligand_paths)
         self.ligand_display_names: dict[Path, str] = {}
         self.output_directory = output_directory
-        self.parameters = dict(parameters)
+        self.parameters = deepcopy(parameters)
+        self.run_status = "pending"
+        self.completed_jobs = 0
+        self.failed_jobs = 0
+        self.total_jobs = 0
+        self.log_path: Path | None = None
         self._scoring_archives = {
             item["key"]: item for item in discover_external_scoring_functions()
         }
@@ -218,10 +231,43 @@ class DockingWorker(QThread):
 
     def run(self) -> None:
         """Execute all docking jobs and emit incremental results."""
+        self.run_status = "running"
+        try:
+            ensure_directory(self.output_directory)
+            log_path = self.output_directory / f"docking_{datetime.now():%Y%m%d_%H%M%S_%f}.log"
+            log_path.touch(exist_ok=False)
+            self.log_path = log_path
+            self._log(f"Log: {log_path}")
+            self._log("Parameters: " + json.dumps(self.parameters, ensure_ascii=False, sort_keys=True))
+            self._log(f"Receptor: {self.receptor_path}; rigid: {self.rigid_receptor_path}; flex: {self.flexible_receptor_path}")
+            self._log("Ligands: " + ", ".join(str(path) for path in self.ligand_paths))
+            self._run_jobs()
+        except Exception as exc:  # noqa: BLE001 - worker failures must reach the GUI
+            self._log(traceback.format_exc())
+            self._report_error(str(exc))
+
+    def _log(self, message: str) -> None:
+        """Retain diagnostics independently of GUI signal delivery."""
+        if self.log_path is not None:
+            try:
+                with self.log_path.open("a", encoding="utf-8") as handle:
+                    handle.write(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {message.rstrip()}\n")
+            except OSError as exc:
+                self.log_path = None
+                self.log_signal.emit(f"ERROR: Cannot save run log: {exc}")
+        self.log_signal.emit(message)
+
+    def _report_error(self, message: str) -> None:
+        self.run_status = "failed"
+        self._log(f"ERROR: {message}")
+        self.error_signal.emit(message)
+
+    def _run_jobs(self) -> None:
+        """Run jobs with explicit terminal state and batch failure counts."""
         selected_scoring = self._selected_scoring_functions()
         vina_cli = self._vina_cli_path()
         if Vina is None and vina_cli is None:
-            self.error_signal.emit(
+            self._report_error(
                 "O pacote Python vina não está instalado e nenhum fallback Vina CLI incluído foi encontrado."
             )
             return
@@ -229,20 +275,26 @@ class DockingWorker(QThread):
         try:
             ensure_directory(self.output_directory)
         except OSError as exc:
-            self.error_signal.emit(
+            self._report_error(
                 f"Não foi possível criar o diretório de saída: {exc}"
             )
             return
 
         if not self.ligand_paths:
-            self.error_signal.emit("Nenhum arquivo PDBQT de ligante foi fornecido.")
+            self._report_error("Nenhum arquivo PDBQT de ligante foi fornecido.")
+            return
+
+        names = [safe_stem(path).casefold() for path in self.ligand_paths]
+        if len(names) != len(set(names)):
+            self._report_error("Ligand filenames collide after normalization; rename them before docking.")
             return
 
         try:
             self._prepare_pdbqt_inputs()
             self._reference_ligand_text = self._load_reference_ligand_text()
         except Exception as exc:  # noqa: BLE001 - input preparation errors must be shown in the GUI
-            self.error_signal.emit(
+            self._log(traceback.format_exc())
+            self._report_error(
                 f"Não foi possível preparar as entradas PDBQT: {exc}"
             )
             return
@@ -250,36 +302,49 @@ class DockingWorker(QThread):
         total = len(self.ligand_paths)
         all_results: list[dict] = []
         total_jobs = total * len(selected_scoring)
+        self.total_jobs = total_jobs
         completed_jobs = 0
-        self.log_signal.emit(
+        self._log(
             f"Iniciando docking para {total} ligante(s) com {len(selected_scoring)} função(ões) de pontuação."
         )
 
-        for index, ligand_path in enumerate(self.ligand_paths, start=1):
+        for ligand_path in self.ligand_paths:
             for scoring_key in selected_scoring:
+                if self.isInterruptionRequested():
+                    self.run_status = "cancelled"
+                    self._log(f"Cancelled: {completed_jobs}/{total_jobs} jobs processed.")
+                    return
                 try:
+                    self._log(f"Job {completed_jobs + 1}/{total_jobs}: {ligand_path.name} ({scoring_key})")
                     grid_warning = self._validate_ligand_inside_grid(ligand_path)
                     if grid_warning:
-                        self.log_signal.emit(f"AVISO {grid_warning}")
+                        self._log(f"AVISO {grid_warning}")
                     ligand_results = self._run_ligand_with_scoring(
                         ligand_path, scoring_key, vina_cli
                     )
+                    if not ligand_results:
+                        raise RuntimeError("Vina produced no readable docking poses.")
                     all_results.extend(ligand_results)
                     self.result_signal.emit(ligand_results)
-                    self.log_signal.emit(
+                    self._log(
                         f"Concluído {ligand_path.name} com {self._scoring_label(scoring_key)}: "
                         f"{len(ligand_results)} pose(s)."
                     )
                 except Exception as exc:  # noqa: BLE001 - per-ligand/scorer failures must not stop the batch
-                    self.log_signal.emit(
+                    self.failed_jobs += 1
+                    self._log(
                         f"ERRO no docking de {ligand_path.name} com {self._scoring_label(scoring_key)}: {exc}"
                     )
-                    self.log_signal.emit(traceback.format_exc())
+                    self._log(traceback.format_exc())
                 finally:
                     completed_jobs += 1
+                    self.completed_jobs = completed_jobs
                     self.progress_signal.emit(int(completed_jobs / total_jobs * 100))
 
-        self.log_signal.emit(
+        self.run_status = "failed" if self.failed_jobs else "completed"
+        if self.failed_jobs:
+            self.error_signal.emit(f"{self.failed_jobs}/{total_jobs} docking jobs failed. See the run log for details.")
+        self._log(
             f"Docking finalizado. {len(all_results)} pose(s) interpretada(s)."
         )
 
@@ -327,6 +392,9 @@ class DockingWorker(QThread):
                 row["receptor_file"] = str(
                     self.rigid_receptor_path or self.receptor_path
                 )
+                row["original_receptor_file"] = str(self.original_receptor_path)
+                row["rigid_receptor_file"] = str(self.rigid_receptor_path or "")
+                row["flexible_receptor_file"] = str(self.flexible_receptor_path or "")
             return rows
         finally:
             self.parameters = previous_parameters
@@ -362,6 +430,7 @@ class DockingWorker(QThread):
                 pose_text = extract_pose_model(
                     Path(row["output_file"]), int(row["mode"]), include_model=False
                 )
+                pose_text, _flexible_atoms = split_flexible_pose(pose_text)
                 result = symmetry_corrected_rmsd(pose_text, reference_text)
             except Exception as exc:  # noqa: BLE001 - keep docking results visible
                 row["reference_rmsd"] = ""
@@ -384,7 +453,7 @@ class DockingWorker(QThread):
         if not ligand_results:
             return
         scorer_label = self._scoring_label(scoring_key)
-        self.log_signal.emit(f"Repontuando poses com {scorer_label}.")
+        self._log(f"Repontuando poses com {scorer_label}.")
         scores = self._score_ligand_results(scoring_key, ligand_results)
         for row in ligand_results:
             row["vina_affinity"] = row["affinity"]
@@ -394,7 +463,7 @@ class DockingWorker(QThread):
                 row["external_score"] = scores[row["mode"]]
             else:
                 row["external_score"] = ""
-        self.log_signal.emit(f"Repontuação concluída com {scorer_label}.")
+        self._log(f"Repontuação concluída com {scorer_label}.")
 
     def _score_ligand_results(
         self, scoring_key: str, ligand_results: list[dict]
@@ -619,32 +688,32 @@ class DockingWorker(QThread):
 
     def _prepare_pdbqt_inputs(self) -> None:
         """Create sanitized PDBQT copies for files containing unsupported PDB records."""
-        receptor_result = sanitize_pdbqt_for_vina(
-            self.receptor_path, self.output_directory, "receptor"
-        )
+        # Keep inputs with results: charge repair must never edit the user's source.
+        staged_dir = Path(tempfile.mkdtemp(prefix="docking_inputs_", dir=self.output_directory))
+
+        def stage(source: Path, role: str):
+            copied = staged_dir / f"{role}_{source.name}"
+            shutil.copy2(source, copied)
+            return sanitize_pdbqt_for_vina(copied, staged_dir, role)
+
+        receptor_result = stage(self.receptor_path, "receptor")
         self.receptor_path = receptor_result.path
         self._log_sanitization("receptor", receptor_result)
 
         if self.rigid_receptor_path:
-            rigid_result = sanitize_pdbqt_for_vina(
-                self.rigid_receptor_path, self.output_directory, "rigid_receptor"
-            )
+            rigid_result = stage(self.rigid_receptor_path, "rigid_receptor")
             self.rigid_receptor_path = rigid_result.path
             self._log_sanitization("rigid receptor", rigid_result)
 
         if self.flexible_receptor_path:
-            flex_result = sanitize_pdbqt_for_vina(
-                self.flexible_receptor_path, self.output_directory, "flex_receptor"
-            )
+            flex_result = stage(self.flexible_receptor_path, "flex_receptor")
             self.flexible_receptor_path = flex_result.path
             self._log_sanitization("flexible receptor", flex_result)
 
         prepared_ligands: list[Path] = []
         self.ligand_display_names = {}
         for ligand_path in self.ligand_paths:
-            ligand_result = sanitize_pdbqt_for_vina(
-                ligand_path, self.output_directory, "ligand"
-            )
+            ligand_result = stage(ligand_path, "ligand")
             validate_ligand_pdbqt(ligand_result.path)
             self._ensure_pdbqt_charges(ligand_result.path, "ligand")
             prepared_ligands.append(ligand_result.path)
@@ -664,7 +733,7 @@ class DockingWorker(QThread):
         """Validate column-9 partial charges; auto-repair before Vina parses the file (Issue 21)."""
         if validate_pdbqt_charges(path):
             return
-        self.log_signal.emit(
+        self._log(
             f"AVISO: cargas parciais ausentes ou inválidas em {path.name}; corrigindo antes do docking."
         )
         if not repair_pdbqt_charges(path, role):
@@ -687,8 +756,8 @@ class DockingWorker(QThread):
                 f"{tag}={count}" for tag, count in result.normalized_counts.items()
             )
             details.append(f"tipos atômicos normalizados [{normalized}]")
-        self.log_signal.emit(f"PDBQT sanitizado ({label}): {'; '.join(details)}.")
-        self.log_signal.emit(f"Usando cópia sanitizada: {result.path}")
+        self._log(f"PDBQT sanitizado ({label}): {'; '.join(details)}.")
+        self._log(f"Usando cópia sanitizada: {result.path}")
         if "receptor" in label.lower():
             ligand_only_tags = {"ROOT", "ENDROOT", "BRANCH", "ENDBRANCH"}
             removed_ligand_lines = sum(
@@ -696,7 +765,7 @@ class DockingWorker(QThread):
                 for tag, count in result.removed_counts.items()
                 if tag.upper() in ligand_only_tags
             )
-            self.log_signal.emit(
+            self._log(
                 f"Receptor sanitizado: {removed_ligand_lines} linhas removidas (ROOT, ENDROOT, BRANCH, ENDBRANCH)."
             )
 
@@ -740,7 +809,7 @@ class DockingWorker(QThread):
             ],
         )
 
-        self.log_signal.emit(f"Executando docking de {ligand_name} com {sf_name}.")
+        self._log(f"Executando docking de {ligand_name} com {sf_name}.")
         vina_instance.dock(
             exhaustiveness=int(self.parameters["exhaustiveness"]),
             n_poses=int(self.parameters["num_modes"]),
@@ -823,25 +892,28 @@ class DockingWorker(QThread):
         if self.flexible_receptor_path:
             command.extend(["--flex", str(self.flexible_receptor_path)])
 
-        self.log_signal.emit(
+        self._log(
             f"Executando docking de {ligand_name} com fallback Vina CLI incluído."
         )
-        completed = subprocess.run(
+        self._log("Command: " + subprocess.list2cmdline(command))
+        with subprocess.Popen(
             command,
             cwd=self.output_directory,
             env=native_tool_env(vina_cli),
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
-            check=False,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
             creationflags=NO_WINDOW,
-        )
-        for line in completed.stdout.splitlines():
-            self.log_signal.emit(line)
-        for line in completed.stderr.splitlines():
-            self.log_signal.emit(line)
-        if completed.returncode != 0:
+        ) as process:
+            for line in process.stdout:
+                self._log(line.rstrip())
+            returncode = process.wait()
+        if returncode != 0:
             raise RuntimeError(
-                f"Vina CLI incluído finalizou com código {completed.returncode}."
+                f"Vina CLI incluído finalizou com código {returncode}."
             )
         clean_pdbqt_file(output_file)
         return self.parse_output_pdbqt(output_file, ligand_name)

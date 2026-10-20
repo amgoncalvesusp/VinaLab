@@ -36,6 +36,7 @@ def atomic_conversion(role):
             from core.converter import ConversionResult
 
             source, target = Path(input_path), Path(output_path)
+            result = None
             try:
                 if source.resolve() == target.resolve() or (target.exists() and source.samefile(target)):
                     raise ValueError("Entrada e saída devem ser arquivos diferentes.")
@@ -54,6 +55,8 @@ def atomic_conversion(role):
                         staged.replace(target)
                     return ConversionResult(result.success, target, result.log, result.errors)
             except Exception as exc:
-                return ConversionResult(False, target, "", f"Falha na conversão: {exc}")
+                log = result.log if result is not None else ""
+                errors = result.errors if result is not None else ""
+                return ConversionResult(False, target, log, f"{errors}\nFalha na conversão: {exc}".strip())
         return wrapped
     return decorate

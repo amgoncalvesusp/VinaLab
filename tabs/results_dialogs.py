@@ -50,6 +50,7 @@ except ImportError:  # pragma: no cover - installer should provide PySide6-WebEn
 from core.docking_engine import convert_with_obabel, extract_pose_model, find_obabel_executable
 from core.complex_export import (
     build_complex_mol2, macrocycle_export_pdb, read_export_atoms, validate_export_atoms,
+    merge_flexible_receptor, split_flexible_pose,
 )
 from core.file_utils import clean_pdbqt_text
 from core.i18n import I18n
@@ -565,11 +566,15 @@ class ExportWorker(QThread):
         pose_text = extract_pose_model(
             Path(row["output_file"]), int(row["mode"]), include_model=False
         )
+        pose_text, flexible_text = split_flexible_pose(pose_text)
+        read_export_atoms(pose_text, "pdbqt")
+        if self.include_complex and row.get("flexible_receptor_file") and not flexible_text:
+            raise ValueError("Docked flexible receptor coordinates are missing; cannot export the complete complex.")
         pose_pdbqt = output_dir / f"{pose_basename}.pdbqt"
         pose_pdbqt.write_text(pose_text, encoding="utf-8")
         if self.include_complex and export_format != "mol2":
             self._write_complex_pdb(
-                row, pose_text, output_dir / f"{pose_basename}_complex.pdb"
+                row, pose_text, output_dir / f"{pose_basename}_complex.pdb", flexible_text
             )
         if export_format == "pdbqt":
             return
@@ -579,6 +584,11 @@ class ExportWorker(QThread):
         if self.include_complex and export_format == "mol2":
             receptor_file = self._receptor_file(row)
             with tempfile.TemporaryDirectory(prefix="vinalab-receptor-") as directory:
+                if flexible_text:
+                    merged_receptor = Path(directory) / "receptor.pdbqt"
+                    merged_receptor.write_text(merge_flexible_receptor(
+                        receptor_file.read_text(encoding="utf-8"), flexible_text), encoding="utf-8")
+                    receptor_file = merged_receptor
                 receptor_mol2 = Path(directory) / "receptor.mol2"
                 convert_with_obabel(receptor_file, receptor_mol2)
                 complex_text = build_complex_mol2(
@@ -596,10 +606,10 @@ class ExportWorker(QThread):
             )
         return receptor_file
 
-    def _write_complex_pdb(self, row: dict, pose_text: str, output_path: Path) -> None:
+    def _write_complex_pdb(self, row: dict, pose_text: str, output_path: Path, flexible_text: str = "") -> None:
         """Write a coordinate-preserving complex, including in PDBQT-only installs."""
         receptor_file = self._receptor_file(row)
-        receptor_text = receptor_file.read_text(encoding="utf-8")
+        receptor_text = merge_flexible_receptor(receptor_file.read_text(encoding="utf-8"), flexible_text)
         expected = read_export_atoms(receptor_text, "pdbqt") + read_export_atoms(pose_text, "pdbqt")
         if len(expected) > 99999:
             raise ValueError("Complex exceeds the PDB limit of 99999 atoms; use MOL2.")

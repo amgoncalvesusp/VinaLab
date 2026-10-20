@@ -7,6 +7,7 @@ def check_conversion_formats(root: Path) -> list[str]:
     from rdkit import Chem
     from rdkit.Chem import AllChem
     from openbabel import pybel
+    from unittest.mock import patch
     from core.converter import FileConverter
     from core.conversion_io import validate_prepared_pdbqt
 
@@ -33,11 +34,22 @@ def check_conversion_formats(root: Path) -> list[str]:
                 data = obmol.write(fmt)
             source.write_text(data, encoding="utf-8")
             original = source.read_bytes()
-            result = FileConverter.auto_convert(source, role)
+            result = (FileConverter.convert_ligand(source, source.with_suffix(".pdbqt"), fmt, backend="meeko")
+                      if role == "ligand" else FileConverter.auto_convert(source, role))
             if not result.success:
                 raise RuntimeError(f"{role}/{fmt}: {result.log}\n{result.errors}")
             validate_prepared_pdbqt(result.output_path, role)
             if source.read_bytes() != original:
                 raise RuntimeError("Conversion modified source")
             completed.append(f"{role}/{fmt}/Meeko")
+            if role == "ligand":
+                # Exercise the real fallback inside the frozen bundle as well.
+                with patch("meeko.MoleculePreparation.prepare", side_effect=ValueError("smoke fallback")):
+                    fallback = FileConverter.auto_convert(source, role)
+                if not fallback.success or "smoke fallback" not in fallback.log or "Open Babel" not in fallback.log:
+                    raise RuntimeError(f"Fallback {fmt}: {fallback.log}\n{fallback.errors}")
+                validate_prepared_pdbqt(fallback.output_path, role)
+                if source.read_bytes() != original:
+                    raise RuntimeError("Fallback conversion modified source")
+                completed.append(f"{role}/{fmt}/OpenBabel-fallback")
     return completed
